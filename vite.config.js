@@ -16,7 +16,8 @@ export default defineConfig({
         background_color: '#38bdf8',
         display: 'standalone',
         orientation: 'portrait',
-        start_url: '/',
+        start_url: '/TuneDrop/',
+        scope: '/TuneDrop/',
         icons: [
           {
             src: 'icon-192.png',
