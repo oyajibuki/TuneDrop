@@ -501,11 +501,181 @@ const WaitingScreen = ({ chatPartner, onCancel }) => (
   </div>
 );
 
+// --- アバタークロップモーダル ---
+const CROP_SIZE = 260;
+
+const AvatarCropModal = ({ imageFile, onConfirm, onCancel }) => {
+  const imgRef = useRef(null);
+  const containerRef = useRef(null);
+  const [imgSrc, setImgSrc] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+  const offsetRef = useRef({ x: 0, y: 0 });
+  const scaleRef = useRef(1);
+  const [, forceRender] = useState(0);
+  const lastTouchRef = useRef(null);
+  const lastPinchRef = useRef(null);
+  const isDraggingRef = useRef(false);
+  const lastMouseRef = useRef(null);
+
+  useEffect(() => {
+    const reader = new FileReader();
+    reader.onload = e => setImgSrc(e.target.result);
+    reader.readAsDataURL(imageFile);
+  }, [imageFile]);
+
+  const getBaseScale = () => {
+    if (!imgRef.current?.naturalWidth) return 1;
+    return Math.max(CROP_SIZE / imgRef.current.naturalWidth, CROP_SIZE / imgRef.current.naturalHeight);
+  };
+
+  const clamp = () => {
+    if (!imgRef.current?.naturalWidth) return;
+    const bs = getBaseScale();
+    const dw = imgRef.current.naturalWidth * bs * scaleRef.current;
+    const dh = imgRef.current.naturalHeight * bs * scaleRef.current;
+    const mx = Math.max(0, (dw - CROP_SIZE) / 2);
+    const my = Math.max(0, (dh - CROP_SIZE) / 2);
+    offsetRef.current.x = Math.max(-mx, Math.min(mx, offsetRef.current.x));
+    offsetRef.current.y = Math.max(-my, Math.min(my, offsetRef.current.y));
+  };
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onTouchStart = (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1) {
+        lastTouchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        lastPinchRef.current = null;
+      } else if (e.touches.length === 2) {
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
+        lastPinchRef.current = { dist: Math.hypot(dx, dy) };
+        lastTouchRef.current = null;
+      }
+    };
+    const onTouchMove = (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1 && lastTouchRef.current) {
+        offsetRef.current.x += e.touches[0].clientX - lastTouchRef.current.x;
+        offsetRef.current.y += e.touches[0].clientY - lastTouchRef.current.y;
+        clamp();
+        lastTouchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        forceRender(n => n + 1);
+      } else if (e.touches.length === 2 && lastPinchRef.current) {
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
+        const newDist = Math.hypot(dx, dy);
+        scaleRef.current = Math.max(1, Math.min(5, scaleRef.current * (newDist / lastPinchRef.current.dist)));
+        clamp();
+        lastPinchRef.current = { dist: newDist };
+        forceRender(n => n + 1);
+      }
+    };
+    const onTouchEnd = () => { lastTouchRef.current = null; lastPinchRef.current = null; };
+    const onWheel = (e) => {
+      e.preventDefault();
+      scaleRef.current = Math.max(1, Math.min(5, scaleRef.current * (e.deltaY > 0 ? 0.9 : 1.1)));
+      clamp();
+      forceRender(n => n + 1);
+    };
+    el.addEventListener('touchstart', onTouchStart, { passive: false });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: false });
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('wheel', onWheel);
+    };
+  }, []);
+
+  const handleMouseDown = (e) => { isDraggingRef.current = true; lastMouseRef.current = { x: e.clientX, y: e.clientY }; };
+  const handleMouseMove = (e) => {
+    if (!isDraggingRef.current) return;
+    offsetRef.current.x += e.clientX - lastMouseRef.current.x;
+    offsetRef.current.y += e.clientY - lastMouseRef.current.y;
+    clamp();
+    lastMouseRef.current = { x: e.clientX, y: e.clientY };
+    forceRender(n => n + 1);
+  };
+  const handleMouseUp = () => { isDraggingRef.current = false; };
+
+  const handleConfirm = () => {
+    if (!imgRef.current || !loaded) return;
+    const bs = getBaseScale();
+    const dw = imgRef.current.naturalWidth * bs * scaleRef.current;
+    const dh = imgRef.current.naturalHeight * bs * scaleRef.current;
+    const OUTPUT = 200;
+    const canvas = document.createElement('canvas');
+    canvas.width = OUTPUT; canvas.height = OUTPUT;
+    const ctx = canvas.getContext('2d');
+    ctx.beginPath();
+    ctx.arc(OUTPUT / 2, OUTPUT / 2, OUTPUT / 2, 0, Math.PI * 2);
+    ctx.clip();
+    const ratio = OUTPUT / CROP_SIZE;
+    ctx.drawImage(
+      imgRef.current,
+      (CROP_SIZE / 2 - dw / 2 + offsetRef.current.x) * ratio,
+      (CROP_SIZE / 2 - dh / 2 + offsetRef.current.y) * ratio,
+      dw * ratio, dh * ratio
+    );
+    canvas.toBlob(blob => onConfirm(blob), 'image/jpeg', 0.85);
+  };
+
+  const bs = imgRef.current?.naturalWidth ? getBaseScale() : 1;
+  const dw = imgRef.current?.naturalWidth ? imgRef.current.naturalWidth * bs * scaleRef.current : CROP_SIZE;
+  const dh = imgRef.current?.naturalWidth ? imgRef.current.naturalHeight * bs * scaleRef.current : CROP_SIZE;
+
+  return (
+    <div className="absolute inset-0 z-[300] bg-black/80 flex flex-col items-center justify-center p-4">
+      <div className="bg-white rounded-3xl p-6 w-full max-w-sm">
+        <h3 className="text-center font-bold text-slate-800 mb-4 text-lg">写真を調整</h3>
+        <div
+          ref={containerRef}
+          className="relative mx-auto overflow-hidden rounded-full border-4 border-sky-400 cursor-grab active:cursor-grabbing select-none"
+          style={{ width: CROP_SIZE, height: CROP_SIZE }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+        >
+          {imgSrc && (
+            <img
+              ref={imgRef}
+              src={imgSrc}
+              onLoad={() => setLoaded(true)}
+              draggable={false}
+              style={{
+                position: 'absolute',
+                width: dw,
+                height: dh,
+                left: CROP_SIZE / 2 - dw / 2 + offsetRef.current.x,
+                top: CROP_SIZE / 2 - dh / 2 + offsetRef.current.y,
+                pointerEvents: 'none',
+                userSelect: 'none',
+              }}
+              alt=""
+            />
+          )}
+          {!loaded && <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm">読み込み中…</div>}
+        </div>
+        <p className="text-center text-xs text-slate-400 mt-3 mb-5">ドラッグで移動・ピンチで拡大縮小</p>
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-2xl font-bold hover:bg-slate-200 transition">キャンセル</button>
+          <button onClick={handleConfirm} disabled={!loaded} className="flex-1 py-3 bg-sky-500 text-white rounded-2xl font-bold hover:bg-sky-600 transition disabled:opacity-50">決定</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- メインアプリ ---
 const App = () => {
   const [screen, setScreen] = useState('loading');
   const [authUser, setAuthUser] = useState(null);
-  const [userProfile, setUserProfile] = useState({ name: '', birthDate: '', gender: '' });
+  const [userProfile, setUserProfile] = useState({ name: '', birthDate: '', gender: '', avatarUrl: '' });
 
   const [drops, setDrops] = useState([]);
   const [blockedUsers, setBlockedUsers] = useState([]);
@@ -518,6 +688,10 @@ const App = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editForm, setEditForm] = useState({ name: '', birthDate: '', gender: '' });
+  const [cropImage, setCropImage] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState(null);
+  const avatarBlobRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const [currentRoomId, setCurrentRoomId] = useState(null);
   const [chatPartner, setChatPartner] = useState(null);
@@ -547,7 +721,7 @@ const App = () => {
   const checkProfile = async (user) => {
     const { data } = await supabase.from('users').select('*').eq('id', user.id).single();
     if (data) {
-      setUserProfile({ name: data.name, birthDate: data.birth_date, gender: data.gender });
+      setUserProfile({ name: data.name, birthDate: data.birth_date, gender: data.gender, avatarUrl: data.avatar_url || '' });
       setScreen('space');
     } else {
       // Googleアカウントの名前を初期値に
@@ -801,19 +975,48 @@ const App = () => {
 
   const openEditProfile = () => {
     setEditForm({ name: userProfile.name, birthDate: userProfile.birthDate, gender: userProfile.gender });
+    setAvatarPreview(null);
+    avatarBlobRef.current = null;
     setIsEditingProfile(true);
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCropImage(file);
+    e.target.value = '';
+  };
+
+  const handleCropConfirm = (blob) => {
+    avatarBlobRef.current = blob;
+    setAvatarPreview(URL.createObjectURL(blob));
+    setCropImage(null);
   };
 
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     if (!authUser) return;
-    const { error } = await supabase.from('users').update({
-      name: editForm.name,
-      birth_date: editForm.birthDate,
-      gender: editForm.gender,
-    }).eq('id', authUser.id);
+    let newAvatarUrl = userProfile.avatarUrl;
+    if (avatarBlobRef.current) {
+      const filePath = `${authUser.id}.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, avatarBlobRef.current, { upsert: true, contentType: 'image/jpeg' });
+      if (!uploadError) {
+        const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath);
+        newAvatarUrl = publicUrl + '?t=' + Date.now();
+      } else {
+        alert('写真のアップロードに失敗しました: ' + uploadError.message);
+        return;
+      }
+    }
+    const updateData = { name: editForm.name, birth_date: editForm.birthDate, gender: editForm.gender };
+    if (newAvatarUrl !== userProfile.avatarUrl) updateData.avatar_url = newAvatarUrl;
+    const { error } = await supabase.from('users').update(updateData).eq('id', authUser.id);
     if (!error) {
-      setUserProfile({ name: editForm.name, birthDate: editForm.birthDate, gender: editForm.gender });
+      setUserProfile({ name: editForm.name, birthDate: editForm.birthDate, gender: editForm.gender, avatarUrl: newAvatarUrl });
+      avatarBlobRef.current = null;
+      setAvatarPreview(null);
       setIsEditingProfile(false);
     } else {
       alert('保存に失敗しました: ' + error.message);
@@ -882,7 +1085,7 @@ const App = () => {
                 {/* プロフィール表示 */}
                 <div className="flex items-center gap-4 p-4 bg-sky-50 rounded-2xl mb-4">
                   <img
-                    src={authUser?.user_metadata?.avatar_url || `https://i.pravatar.cc/150?u=${authUser?.id}`}
+                    src={userProfile.avatarUrl || authUser?.user_metadata?.avatar_url || `https://i.pravatar.cc/150?u=${authUser?.id}`}
                     className="w-14 h-14 rounded-full border-2 border-white shadow object-cover"
                     alt="avatar"
                   />
@@ -917,15 +1120,20 @@ const App = () => {
                 <div className="flex justify-center mb-6">
                   <div className="relative">
                     <img
-                      src={authUser?.user_metadata?.avatar_url || `https://i.pravatar.cc/150?u=${authUser?.id}`}
+                      src={avatarPreview || userProfile.avatarUrl || authUser?.user_metadata?.avatar_url || `https://i.pravatar.cc/150?u=${authUser?.id}`}
                       className="w-20 h-20 rounded-full border-4 border-sky-100 shadow object-cover"
                       alt="avatar"
                     />
-                    <div className="absolute bottom-0 right-0 bg-sky-500 text-white rounded-full p-1.5 shadow">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="absolute bottom-0 right-0 bg-sky-500 text-white rounded-full p-1.5 shadow hover:bg-sky-600 transition"
+                    >
                       <Camera size={14} />
-                    </div>
+                    </button>
                   </div>
                 </div>
+                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
 
                 <form onSubmit={handleSaveProfile} className="space-y-4">
                   <div>
@@ -969,6 +1177,15 @@ const App = () => {
             )}
           </div>
         </div>
+      )}
+
+      {/* アバタークロップ */}
+      {cropImage && (
+        <AvatarCropModal
+          imageFile={cropImage}
+          onConfirm={handleCropConfirm}
+          onCancel={() => setCropImage(null)}
+        />
       )}
 
       {/* 着信リクエスト */}
