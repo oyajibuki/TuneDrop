@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MessageCircle, Heart, LogIn, Send, X, Clock, AlertCircle, Apple, Camera, MoreVertical, Flag, Ban, Settings, Trash2, LogOut } from 'lucide-react';
+import { MessageCircle, Heart, LogIn, Send, X, Clock, AlertCircle, Camera, MoreVertical, Flag, Ban, Settings, Trash2, LogOut, Edit2, DoorOpen } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 // --- 定数 ---
@@ -409,7 +409,10 @@ const RoomScreen = ({ roomTime, chatPartner, messages, chatInput, setChatInput, 
           <div className={`flex items-center gap-1.5 font-mono text-xl font-bold ${roomTime <= 10 ? 'text-rose-500 animate-pulse' : 'text-sky-500'}`}>
             <Clock size={20} />{formatTime(roomTime)}
           </div>
-          <button onClick={handleNext} className="text-sm px-4 py-2 bg-slate-200 text-slate-700 hover:bg-slate-300 rounded-full transition font-bold ml-2">Next</button>
+          <button onClick={handleNext} className="text-sm px-3 py-2 bg-slate-200 text-slate-700 hover:bg-slate-300 rounded-full transition font-bold ml-2">Next</button>
+          <button onClick={handleNext} className="text-sm px-3 py-2 bg-rose-100 text-rose-600 hover:bg-rose-200 rounded-full transition font-bold flex items-center gap-1">
+            <DoorOpen size={15} />退席
+          </button>
           <div className="relative ml-1">
             <button onClick={() => setShowRoomMenu(!showRoomMenu)} className="p-2 text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full transition"><MoreVertical size={20} /></button>
             {showRoomMenu && (
@@ -513,6 +516,8 @@ const App = () => {
   const [myDropCooldown, setMyDropCooldown] = useState(0);
   const [selectedDrop, setSelectedDrop] = useState(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editForm, setEditForm] = useState({ name: '', birthDate: '', gender: '' });
 
   const [currentRoomId, setCurrentRoomId] = useState(null);
   const [chatPartner, setChatPartner] = useState(null);
@@ -794,6 +799,27 @@ const App = () => {
     setTimeout(() => { setRoomTime(prev => prev + EXTEND_TIME); setExtendRequested(false); setMessages(prev => [...prev, { id: Date.now(), text: 'システム: 5分間Extendされました✨', isSystem: true }]); }, 1500);
   };
 
+  const openEditProfile = () => {
+    setEditForm({ name: userProfile.name, birthDate: userProfile.birthDate, gender: userProfile.gender });
+    setIsEditingProfile(true);
+  };
+
+  const handleSaveProfile = async (e) => {
+    e.preventDefault();
+    if (!authUser) return;
+    const { error } = await supabase.from('users').update({
+      name: editForm.name,
+      birth_date: editForm.birthDate,
+      gender: editForm.gender,
+    }).eq('id', authUser.id);
+    if (!error) {
+      setUserProfile({ name: editForm.name, birthDate: editForm.birthDate, gender: editForm.gender });
+      setIsEditingProfile(false);
+    } else {
+      alert('保存に失敗しました: ' + error.message);
+    }
+  };
+
   const handleLogout = async () => { await supabase.auth.signOut(); setScreen('login'); setDrops([]); };
 
   const handleDeleteAccount = async () => {
@@ -844,23 +870,103 @@ const App = () => {
       {/* 設定モーダル */}
       {isSettingsOpen && (
         <div className="absolute inset-0 z-[200] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white p-6 rounded-3xl shadow-2xl w-full max-w-sm">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-slate-800">設定・アカウント管理</h3>
-              <button onClick={() => setIsSettingsOpen(false)} className="text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full p-2 transition"><X size={20} /></button>
-            </div>
-            <div className="space-y-3">
-              <button onClick={() => { setIsSettingsOpen(false); handleLogout(); }} className="w-full py-4 bg-slate-100 text-slate-700 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-200 transition shadow-sm">
-                <LogOut size={20} /> ログアウト
-              </button>
-              <div className="pt-5 mt-5 border-t border-slate-100">
-                <p className="text-xs text-slate-400 mb-3 text-center">アカウントを完全に削除します</p>
-                <button onClick={() => { if (window.confirm('本当にアカウントを削除しますか？\nすべてのデータが消えます。')) { setIsSettingsOpen(false); handleDeleteAccount(); } }}
-                  className="w-full py-4 bg-rose-50 text-rose-600 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-rose-100 transition shadow-sm border border-rose-100">
-                  <Trash2 size={20} /> アカウントを削除（退会）
-                </button>
-              </div>
-            </div>
+          <div className="bg-white p-6 rounded-3xl shadow-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
+
+            {!isEditingProfile ? (
+              <>
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold text-slate-800">設定</h3>
+                  <button onClick={() => setIsSettingsOpen(false)} className="text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full p-2 transition"><X size={20} /></button>
+                </div>
+
+                {/* プロフィール表示 */}
+                <div className="flex items-center gap-4 p-4 bg-sky-50 rounded-2xl mb-4">
+                  <img
+                    src={authUser?.user_metadata?.avatar_url || `https://i.pravatar.cc/150?u=${authUser?.id}`}
+                    className="w-14 h-14 rounded-full border-2 border-white shadow object-cover"
+                    alt="avatar"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-slate-800 truncate">{userProfile.name}</p>
+                    <p className="text-sm text-slate-500">{calculateAgeGroup(userProfile.birthDate)} · {userProfile.gender === 'male' ? '男性' : userProfile.gender === 'female' ? '女性' : userProfile.gender === 'other' ? 'その他' : '回答しない'}</p>
+                  </div>
+                  <button onClick={openEditProfile} className="p-2 bg-white rounded-full shadow-sm text-sky-500 hover:bg-sky-50 transition">
+                    <Edit2 size={18} />
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  <button onClick={() => { setIsSettingsOpen(false); handleLogout(); }} className="w-full py-4 bg-slate-100 text-slate-700 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-200 transition">
+                    <LogOut size={20} /> ログアウト
+                  </button>
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <button onClick={() => { if (window.confirm('本当にアカウントを削除しますか？\nすべてのデータが消えます。')) { setIsSettingsOpen(false); handleDeleteAccount(); } }}
+                      className="w-full py-4 bg-rose-50 text-rose-600 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-rose-100 transition border border-rose-100">
+                      <Trash2 size={20} /> アカウントを削除（退会）
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 mb-6">
+                  <button onClick={() => setIsEditingProfile(false)} className="text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full p-2 transition"><X size={20} /></button>
+                  <h3 className="text-xl font-bold text-slate-800">プロフィール編集</h3>
+                </div>
+
+                <div className="flex justify-center mb-6">
+                  <div className="relative">
+                    <img
+                      src={authUser?.user_metadata?.avatar_url || `https://i.pravatar.cc/150?u=${authUser?.id}`}
+                      className="w-20 h-20 rounded-full border-4 border-sky-100 shadow object-cover"
+                      alt="avatar"
+                    />
+                    <div className="absolute bottom-0 right-0 bg-sky-500 text-white rounded-full p-1.5 shadow">
+                      <Camera size={14} />
+                    </div>
+                  </div>
+                </div>
+
+                <form onSubmit={handleSaveProfile} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1">名前</label>
+                    <input
+                      type="text" required
+                      value={editForm.name}
+                      onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1">生年月日</label>
+                    <input
+                      type="date" required
+                      value={editForm.birthDate}
+                      onChange={e => setEditForm({ ...editForm, birthDate: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1">性別</label>
+                    <select
+                      required
+                      value={editForm.gender}
+                      onChange={e => setEditForm({ ...editForm, gender: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400"
+                    >
+                      <option value="" disabled>選択してください</option>
+                      <option value="male">男性</option>
+                      <option value="female">女性</option>
+                      <option value="other">その他</option>
+                      <option value="no_answer">回答しない</option>
+                    </select>
+                  </div>
+                  <button type="submit" className="w-full py-4 bg-sky-500 text-white rounded-2xl font-bold hover:bg-sky-600 transition shadow-md mt-2">
+                    保存する
+                  </button>
+                </form>
+              </>
+            )}
           </div>
         </div>
       )}
