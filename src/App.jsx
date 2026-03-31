@@ -49,7 +49,7 @@ const toLocalDrop = (drop, myUserId) => ({
 });
 
 // --- LoginScreen ---
-const LoginScreen = ({ onGoogleLogin }) => {
+const LoginScreen = ({ onGoogleLogin, onLineLogin }) => {
   const [agreed, setAgreed] = useState(false);
 
   return (
@@ -70,6 +70,14 @@ const LoginScreen = ({ onGoogleLogin }) => {
       </label>
 
       <div className="w-full max-w-sm space-y-3">
+        {/* LINE ログインボタン (最優先) */}
+        <button
+          onClick={() => agreed && onLineLogin()}
+          className={`w-full py-4 bg-[#06C755] text-white rounded-2xl font-bold flex items-center justify-center gap-2 transition shadow-md ${!agreed ? 'opacity-40 cursor-not-allowed' : 'hover:brightness-110'}`}
+        >
+          <MessageCircle size={20} /> LINEでログイン
+        </button>
+
         <button
           onClick={() => agreed && onGoogleLogin()}
           className={`w-full py-4 bg-white text-slate-700 rounded-2xl font-bold flex items-center justify-center gap-2 transition shadow-md ${!agreed ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-50'}`}
@@ -505,14 +513,14 @@ const WaitingScreen = ({ chatPartner, onCancel }) => (
 const CROP_SIZE = 260;
 
 const AvatarCropModal = ({ imageFile, onConfirm, onCancel }) => {
-  const imgRef = useRef(null);
-  const containerRef = useRef(null);
+  const imgRef = useRef(null);       // hidden <img> for pixel data
+  const canvasRef = useRef(null);    // visible preview canvas
+  const rafRef = useRef(null);
+  const offsetRef = useRef({ x: 0, y: 0 }); // image center offset from circle center (screen coords)
+  const scaleRef = useRef(1);
+  const rotationRef = useRef(0); // degrees: 0, 90, 180, 270
   const [imgSrc, setImgSrc] = useState(null);
   const [loaded, setLoaded] = useState(false);
-  const offsetRef = useRef({ x: 0, y: 0 }); // visual center offset from circle center
-  const scaleRef = useRef(1);
-  const rotationRef = useRef(0); // 0, 90, 180, 270
-  const [, forceRender] = useState(0);
   const lastTouchRef = useRef(null);
   const lastPinchRef = useRef(null);
   const isDraggingRef = useRef(false);
@@ -524,25 +532,23 @@ const AvatarCropModal = ({ imageFile, onConfirm, onCancel }) => {
     reader.readAsDataURL(imageFile);
   }, [imageFile]);
 
-  // Base scale ensuring the image (in its rotated orientation) covers the crop circle
   const getBaseScale = () => {
-    if (!imgRef.current?.naturalWidth) return 1;
-    return Math.max(CROP_SIZE / imgRef.current.naturalWidth, CROP_SIZE / imgRef.current.naturalHeight);
+    const img = imgRef.current;
+    if (!img?.naturalWidth) return 1;
+    return Math.max(CROP_SIZE / img.naturalWidth, CROP_SIZE / img.naturalHeight);
   };
 
-  // Element pixel dimensions (pre-rotation CSS size)
   const getDims = () => {
-    if (!imgRef.current?.naturalWidth) return { dw: CROP_SIZE, dh: CROP_SIZE };
+    const img = imgRef.current;
+    if (!img?.naturalWidth) return { dw: CROP_SIZE, dh: CROP_SIZE };
     const bs = getBaseScale();
-    return {
-      dw: imgRef.current.naturalWidth * bs * scaleRef.current,
-      dh: imgRef.current.naturalHeight * bs * scaleRef.current,
-    };
+    return { dw: img.naturalWidth * bs * scaleRef.current, dh: img.naturalHeight * bs * scaleRef.current };
   };
 
-  // After CSS rotate, the visual X-span = dh and Y-span = dw when rotated 90/270
+  // clamp so image always fully covers the circle
   const clamp = () => {
-    if (!imgRef.current?.naturalWidth) return;
+    const img = imgRef.current;
+    if (!img?.naturalWidth) return;
     const { dw, dh } = getDims();
     const isRot = (rotationRef.current / 90) % 2 !== 0;
     const mx = Math.max(0, ((isRot ? dh : dw) - CROP_SIZE) / 2);
@@ -551,18 +557,35 @@ const AvatarCropModal = ({ imageFile, onConfirm, onCancel }) => {
     offsetRef.current.y = Math.max(-my, Math.min(my, offsetRef.current.y));
   };
 
-  // Zoom toward a point (midX, midY) in container coordinates
-  const zoomToward = (midX, midY, newScale) => {
-    const ratio = newScale / scaleRef.current;
-    offsetRef.current.x = (midX - CROP_SIZE / 2) * (1 - ratio) + offsetRef.current.x * ratio;
-    offsetRef.current.y = (midY - CROP_SIZE / 2) * (1 - ratio) + offsetRef.current.y * ratio;
-    scaleRef.current = newScale;
-    clamp();
+  // Draw current state to the preview canvas
+  const draw = () => {
+    const canvas = canvasRef.current;
+    const img = imgRef.current;
+    if (!canvas || !img?.naturalWidth) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, CROP_SIZE, CROP_SIZE);
+    const { dw, dh } = getDims();
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(CROP_SIZE / 2, CROP_SIZE / 2, CROP_SIZE / 2, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.translate(CROP_SIZE / 2 + offsetRef.current.x, CROP_SIZE / 2 + offsetRef.current.y);
+    ctx.rotate(rotationRef.current * Math.PI / 180);
+    ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+    ctx.restore();
   };
 
+  const scheduleDraw = () => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(draw);
+  };
+
+  useEffect(() => { if (loaded) scheduleDraw(); }, [loaded]);
+
   useEffect(() => {
-    const el = containerRef.current;
+    const el = canvasRef.current;
     if (!el) return;
+
     const onTouchStart = (e) => {
       e.preventDefault();
       if (e.touches.length === 1) {
@@ -579,40 +602,61 @@ const AvatarCropModal = ({ imageFile, onConfirm, onCancel }) => {
         lastTouchRef.current = null;
       }
     };
+
     const onTouchMove = (e) => {
       e.preventDefault();
       if (e.touches.length === 1 && lastTouchRef.current) {
+        // pan
         offsetRef.current.x += e.touches[0].clientX - lastTouchRef.current.x;
         offsetRef.current.y += e.touches[0].clientY - lastTouchRef.current.y;
         clamp();
         lastTouchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        forceRender(n => n + 1);
+        scheduleDraw();
       } else if (e.touches.length === 2 && lastPinchRef.current) {
-        const dx = e.touches[1].clientX - e.touches[0].clientX;
-        const dy = e.touches[1].clientY - e.touches[0].clientY;
-        const newDist = Math.hypot(dx, dy);
-        const newMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-        const newMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const t0 = e.touches[0], t1 = e.touches[1];
+        const newDist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+        const newMidClientX = (t0.clientX + t1.clientX) / 2;
+        const newMidClientY = (t0.clientY + t1.clientY) / 2;
         const rect = el.getBoundingClientRect();
-        const midXInContainer = lastPinchRef.current.midX - rect.left;
-        const midYInContainer = lastPinchRef.current.midY - rect.top;
+
+        // step 1: pan image with midpoint translation
+        offsetRef.current.x += newMidClientX - lastPinchRef.current.midX;
+        offsetRef.current.y += newMidClientY - lastPinchRef.current.midY;
+
+        // step 2: zoom toward current midpoint in container coords
+        const midX = newMidClientX - rect.left;
+        const midY = newMidClientY - rect.top;
         const newScale = Math.max(1, Math.min(5, scaleRef.current * (newDist / lastPinchRef.current.dist)));
-        zoomToward(midXInContainer, midYInContainer, newScale);
-        lastPinchRef.current = { dist: newDist, midX: newMidX, midY: newMidY };
-        forceRender(n => n + 1);
+        const sr = newScale / scaleRef.current;
+        offsetRef.current.x = (midX - CROP_SIZE / 2) * (1 - sr) + offsetRef.current.x * sr;
+        offsetRef.current.y = (midY - CROP_SIZE / 2) * (1 - sr) + offsetRef.current.y * sr;
+        scaleRef.current = newScale;
+
+        clamp();
+        lastPinchRef.current = { dist: newDist, midX: newMidClientX, midY: newMidClientY };
+        scheduleDraw();
       }
     };
+
     const onTouchEnd = (e) => {
       if (e.touches.length < 2) lastPinchRef.current = null;
       if (e.touches.length < 1) lastTouchRef.current = null;
     };
+
     const onWheel = (e) => {
       e.preventDefault();
       const rect = el.getBoundingClientRect();
+      const midX = e.clientX - rect.left;
+      const midY = e.clientY - rect.top;
       const newScale = Math.max(1, Math.min(5, scaleRef.current * (e.deltaY > 0 ? 0.9 : 1.1)));
-      zoomToward(e.clientX - rect.left, e.clientY - rect.top, newScale);
-      forceRender(n => n + 1);
+      const sr = newScale / scaleRef.current;
+      offsetRef.current.x = (midX - CROP_SIZE / 2) * (1 - sr) + offsetRef.current.x * sr;
+      offsetRef.current.y = (midY - CROP_SIZE / 2) * (1 - sr) + offsetRef.current.y * sr;
+      scaleRef.current = newScale;
+      clamp();
+      scheduleDraw();
     };
+
     el.addEventListener('touchstart', onTouchStart, { passive: false });
     el.addEventListener('touchmove', onTouchMove, { passive: false });
     el.addEventListener('touchend', onTouchEnd, { passive: false });
@@ -632,7 +676,7 @@ const AvatarCropModal = ({ imageFile, onConfirm, onCancel }) => {
     offsetRef.current.y += e.clientY - lastMouseRef.current.y;
     clamp();
     lastMouseRef.current = { x: e.clientX, y: e.clientY };
-    forceRender(n => n + 1);
+    scheduleDraw();
   };
   const handleMouseUp = () => { isDraggingRef.current = false; };
 
@@ -640,64 +684,53 @@ const AvatarCropModal = ({ imageFile, onConfirm, onCancel }) => {
     rotationRef.current = ((rotationRef.current + dir * 90) + 360) % 360;
     scaleRef.current = 1;
     offsetRef.current = { x: 0, y: 0 };
-    forceRender(n => n + 1);
+    scheduleDraw();
   };
 
+  // Output canvas uses the exact same drawing code as preview — WYSIWYG
   const handleConfirm = () => {
-    if (!imgRef.current || !loaded) return;
+    const img = imgRef.current;
+    if (!img || !loaded) return;
     const { dw, dh } = getDims();
     const OUTPUT = 200;
     const canvas = document.createElement('canvas');
     canvas.width = OUTPUT; canvas.height = OUTPUT;
     const ctx = canvas.getContext('2d');
-    // Clip to circle first (in canvas coordinate space)
+    const r = OUTPUT / CROP_SIZE;
     ctx.beginPath();
     ctx.arc(OUTPUT / 2, OUTPUT / 2, OUTPUT / 2, 0, Math.PI * 2);
     ctx.clip();
-    const ratio = OUTPUT / CROP_SIZE;
-    // Replicate CSS: translate to image center, rotate, draw centered
-    ctx.translate((CROP_SIZE / 2 + offsetRef.current.x) * ratio, (CROP_SIZE / 2 + offsetRef.current.y) * ratio);
+    ctx.translate((CROP_SIZE / 2 + offsetRef.current.x) * r, (CROP_SIZE / 2 + offsetRef.current.y) * r);
     ctx.rotate(rotationRef.current * Math.PI / 180);
-    ctx.drawImage(imgRef.current, -dw / 2 * ratio, -dh / 2 * ratio, dw * ratio, dh * ratio);
+    ctx.drawImage(img, -dw / 2 * r, -dh / 2 * r, dw * r, dh * r);
     canvas.toBlob(blob => onConfirm(blob), 'image/jpeg', 0.85);
   };
-
-  const { dw, dh } = getDims();
 
   return (
     <div className="absolute inset-0 z-[300] bg-black/80 flex flex-col items-center justify-center p-4">
       <div className="bg-white rounded-3xl p-6 w-full max-w-sm">
         <h3 className="text-center font-bold text-slate-800 mb-4 text-lg">写真を調整</h3>
-        <div
-          ref={containerRef}
-          className="relative mx-auto overflow-hidden rounded-full border-4 border-sky-400 cursor-grab active:cursor-grabbing select-none"
-          style={{ width: CROP_SIZE, height: CROP_SIZE }}
+
+        {/* Hidden img for pixel data */}
+        {imgSrc && <img ref={imgRef} src={imgSrc} onLoad={() => setLoaded(true)} style={{ display: 'none' }} alt="" />}
+
+        {/* Canvas preview — circle shape via border-radius */}
+        <canvas
+          ref={canvasRef}
+          width={CROP_SIZE}
+          height={CROP_SIZE}
+          style={{ width: CROP_SIZE, height: CROP_SIZE, borderRadius: '50%', border: '4px solid #38bdf8', display: 'block', margin: '0 auto', cursor: 'grab', touchAction: 'none' }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
-        >
-          {imgSrc && (
-            <img
-              ref={imgRef}
-              src={imgSrc}
-              onLoad={() => setLoaded(true)}
-              draggable={false}
-              style={{
-                position: 'absolute',
-                width: dw,
-                height: dh,
-                left: CROP_SIZE / 2 - dw / 2 + offsetRef.current.x,
-                top: CROP_SIZE / 2 - dh / 2 + offsetRef.current.y,
-                transform: `rotate(${rotationRef.current}deg)`,
-                pointerEvents: 'none',
-                userSelect: 'none',
-              }}
-              alt=""
-            />
-          )}
-          {!loaded && <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm">読み込み中…</div>}
-        </div>
+        />
+        {!loaded && (
+          <div style={{ width: CROP_SIZE, height: CROP_SIZE, borderRadius: '50%', border: '4px solid #38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', color: '#94a3b8', fontSize: 14, position: 'absolute', top: 'auto' }}>
+            読み込み中…
+          </div>
+        )}
+
         <p className="text-center text-xs text-slate-400 mt-2">ドラッグで移動・ピンチで拡大縮小</p>
         <div className="flex justify-center gap-4 mt-3 mb-4">
           <button type="button" onClick={() => handleRotate(-1)} className="px-5 py-2 bg-slate-100 rounded-xl text-slate-600 hover:bg-slate-200 transition text-sm font-medium">↺ 左90°</button>
@@ -769,6 +802,17 @@ const App = () => {
       setUserProfile(prev => ({ ...prev, name: user.user_metadata?.full_name || '' }));
       setScreen('profile');
     }
+  };
+
+  const handleLineLogin = async () => {
+    // Supabase の設定に合わせて provider 名を調整してください
+    // 'line' (標準) または 'custom:line' (カスタムOIDC)
+    await supabase.auth.signInWithOAuth({
+      provider: 'custom:line', 
+      options: {
+        redirectTo: REDIRECT_URL,
+      },
+    });
   };
 
   const handleGoogleLogin = async () => {
@@ -1087,7 +1131,7 @@ const App = () => {
 
   return (
     <div className="font-sans antialiased max-w-md mx-auto h-screen bg-sky-50 shadow-2xl overflow-hidden relative">
-      {screen === 'login'   && <LoginScreen onGoogleLogin={handleGoogleLogin} />}
+      {screen === 'login'   && <LoginScreen onGoogleLogin={handleGoogleLogin} onLineLogin={handleLineLogin} />}
       {screen === 'profile' && <ProfileScreen userProfile={userProfile} setUserProfile={setUserProfile} onSubmit={handleProfileSubmit} />}
       {screen === 'space'   && (
         <SpaceScreen
