@@ -168,18 +168,37 @@ const SpaceScreen = ({
   const clickStartRef = useRef({ x: 0, y: 0 });
   const [showMenu, setShowMenu] = useState(false);
   const canvasContainerRef = useRef(null);
+  const scaleRef = useRef(scale);
+  const cameraRef = useRef(camera);
+  const isPinchingRef = useRef(false);
+  // レンダーのたびにrefを最新状態に同期
+  scaleRef.current = scale;
+  cameraRef.current = camera;
 
   // ポップアップが変わったらメニューを閉じる
   useEffect(() => { setShowMenu(false); }, [selectedDrop]);
 
-  // ピンチズーム：passive: false で addEventListener してブラウザ独自ズームを防ぐ
+  // ピンチズーム：rAFバッチ処理 + passive:false でブラウザズーム防止
   useEffect(() => {
     const el = canvasContainerRef.current;
     if (!el) return;
 
+    let pendingUpdate = null;
+    let animFrameId = null;
+
+    const commitState = () => {
+      if (pendingUpdate) {
+        setScale(pendingUpdate.scale);
+        setCamera(pendingUpdate.camera);
+        pendingUpdate = null;
+      }
+      animFrameId = null;
+    };
+
     const onTouchStart = (e) => {
       if (e.touches.length === 2) {
         e.preventDefault();
+        isPinchingRef.current = true;
         initialDistRef.current = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY
@@ -194,45 +213,63 @@ const SpaceScreen = ({
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY
         );
-        const ratio = currentDist / initialDistRef.current;
+
+        // 感度を60%に抑えてゆっくり・滑らかに
+        const rawRatio = currentDist / initialDistRef.current;
+        const ratio = 1 + (rawRatio - 1) * 0.6;
+
         const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
         const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
         const cx = window.innerWidth / 2;
         const cy = window.innerHeight / 2;
 
-        setScale(prev => {
-          const newScale = Math.min(Math.max(0.3, prev * ratio), 2.5);
-          // ピンチ中心点に向かってカメラを調整
-          setCamera(cam => ({
-            x: ((cam.x + (midX - cx) * (1 / prev - 1 / newScale)) + CANVAS_SIZE) % CANVAS_SIZE,
-            y: ((cam.y + (midY - cy) * (1 / prev - 1 / newScale)) + CANVAS_SIZE) % CANVAS_SIZE,
-          }));
-          return newScale;
-        });
+        // 同フレーム内に複数イベントが来たときはpending値を累積
+        const currentScale = pendingUpdate ? pendingUpdate.scale : scaleRef.current;
+        const currentCam   = pendingUpdate ? pendingUpdate.camera : cameraRef.current;
+
+        const newScale = Math.min(Math.max(0.3, currentScale * ratio), 2.5);
+        const newCam = {
+          x: ((currentCam.x + (midX - cx) * (1 / currentScale - 1 / newScale)) + CANVAS_SIZE) % CANVAS_SIZE,
+          y: ((currentCam.y + (midY - cy) * (1 / currentScale - 1 / newScale)) + CANVAS_SIZE) % CANVAS_SIZE,
+        };
+
+        pendingUpdate = { scale: newScale, camera: newCam };
+        if (!animFrameId) {
+          animFrameId = requestAnimationFrame(commitState);
+        }
         initialDistRef.current = currentDist;
       }
     };
 
+    const onTouchEnd = (e) => {
+      if (e.touches.length < 2) {
+        isPinchingRef.current = false;
+        initialDistRef.current = null;
+      }
+    };
+
     el.addEventListener('touchstart', onTouchStart, { passive: false });
-    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchmove',  onTouchMove,  { passive: false });
+    el.addEventListener('touchend',   onTouchEnd);
     return () => {
       el.removeEventListener('touchstart', onTouchStart);
-      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchmove',  onTouchMove);
+      el.removeEventListener('touchend',   onTouchEnd);
+      if (animFrameId) cancelAnimationFrame(animFrameId);
     };
   }, []);
 
-  // ズーム処理 (マウスホイール) - カーソル位置に向かってズーム
+  // ズーム処理 (マウスホイール) - stateを呼び出し側から直接更新
   const handleWheel = (e) => {
     e.preventDefault();
     const cx = window.innerWidth / 2;
     const cy = window.innerHeight / 2;
-    setScale(prev => {
-      const newScale = Math.min(Math.max(0.3, prev - e.deltaY * 0.001), 2.5);
-      setCamera(cam => ({
-        x: ((cam.x + (e.clientX - cx) * (1 / prev - 1 / newScale)) + CANVAS_SIZE) % CANVAS_SIZE,
-        y: ((cam.y + (e.clientY - cy) * (1 / prev - 1 / newScale)) + CANVAS_SIZE) % CANVAS_SIZE,
-      }));
-      return newScale;
+    const prevScale = scaleRef.current;
+    const newScale = Math.min(Math.max(0.3, prevScale - e.deltaY * 0.001), 2.5);
+    setScale(newScale);
+    setCamera({
+      x: ((cameraRef.current.x + (e.clientX - cx) * (1 / prevScale - 1 / newScale)) + CANVAS_SIZE) % CANVAS_SIZE,
+      y: ((cameraRef.current.y + (e.clientY - cy) * (1 / prevScale - 1 / newScale)) + CANVAS_SIZE) % CANVAS_SIZE,
     });
   };
 
@@ -243,6 +280,7 @@ const SpaceScreen = ({
   };
 
   const handlePointerMove = (e) => {
+    if (isPinchingRef.current) return; // ピンチ中はパン操作しない
     if (draggingDropId) {
       // 特定のTuneを動かしている場合
       const dx = (e.clientX - startPos.x) / scale;
@@ -603,6 +641,32 @@ const FadeScreen = () => (
   </div>
 );
 
+const WaitingScreen = ({ chatPartner, onCancel }) => (
+  <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-b from-sky-500 to-blue-500 text-white p-6">
+    <div className="relative mb-6">
+      <img src={chatPartner?.avatar} className="w-24 h-24 rounded-full border-4 border-white/60 shadow-xl object-cover" alt="partner" />
+      <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-green-400 rounded-full border-2 border-white" />
+    </div>
+    <h3 className="text-xl font-bold mb-1">{chatPartner?.userName}</h3>
+    <p className="text-sky-200 text-sm mb-8">({chatPartner?.ageGroup})</p>
+    <div className="flex gap-3 mb-8">
+      <span className="w-3 h-3 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+      <span className="w-3 h-3 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+      <span className="w-3 h-3 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+    </div>
+    <p className="text-sky-50 font-medium mb-10 text-center">
+      相手の応答を待っています...<br />
+      <span className="text-sm text-sky-200">波長が合えばSyncが始まります</span>
+    </p>
+    <button
+      onClick={onCancel}
+      className="px-8 py-3 bg-white/20 rounded-full font-bold border border-white/40 hover:bg-white/30 transition"
+    >
+      キャンセル
+    </button>
+  </div>
+);
+
 // --- メインアプリケーション ---
 
 const App = () => {
@@ -855,8 +919,13 @@ const App = () => {
       }
       return d;
     }));
-    
-    // 300ms後にフラグを戻して元のサイズへ
+    // ポップアップのselectedDropも即時更新してハートアイコンを反映
+    setSelectedDrop(prev => {
+      if (prev && prev.id === id && !prev.likedByMe) {
+        return { ...prev, likes: (prev.likes || 0) + 1, likedByMe: true };
+      }
+      return prev;
+    });
     setTimeout(() => {
       setDrops(prev => prev.map(d => d.id === id ? { ...d, isPopping: false } : d));
     }, 300);
@@ -890,10 +959,14 @@ const App = () => {
 
   const handleSyncRequest = () => {
     setChatPartner(selectedDrop);
-    setScreen('room');
-    setRoomTime(INITIAL_ROOM_TIME);
-    setMessages([{ id: Date.now(), text: "波長が合いました。5分間のSyncを開始します。", isSystem: true }]);
+    setScreen('waiting');
     setSelectedDrop(null);
+    // 2秒後に相手承認→ルームへ
+    setTimeout(() => {
+      setScreen('room');
+      setRoomTime(INITIAL_ROOM_TIME);
+      setMessages([{ id: Date.now(), text: "波長が合いました。5分間のSyncを開始します。", isSystem: true }]);
+    }, 2000);
   };
 
   const handleSendMessage = (e) => {
@@ -967,6 +1040,12 @@ const App = () => {
         />
       )}
       {screen === 'fade' && <FadeScreen />}
+      {screen === 'waiting' && (
+        <WaitingScreen
+          chatPartner={chatPartner}
+          onCancel={() => { setScreen('space'); setChatPartner(null); }}
+        />
+      )}
 
       {/* 設定・アカウント管理モーダル */}
       {isSettingsOpen && (
