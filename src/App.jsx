@@ -779,18 +779,58 @@ const App = () => {
   const authUserRef = useRef(null);
   authUserRef.current = authUser;
 
-  // ─── Auth 初期化 ───
+  // ─── Auth 初期化 & コールバック処理 ───
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const state = params.get('state');
+
+    // LINE認証コードがURLに含まれている場合
+    if (code && state === 'line_direct') {
+      handleLineAuthCallback(code);
+      return;
+    }
+
+    // 通常のセッション確認
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) { setAuthUser(session.user); checkProfile(session.user); }
       else setScreen('login');
     });
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) { setAuthUser(session.user); checkProfile(session.user); }
       else { setAuthUser(null); setScreen('login'); }
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  const handleLineAuthCallback = async (code) => {
+    setScreen('loading');
+    try {
+      // 自作の Edge Function を呼び出してログイン
+      const { data, error } = await supabase.functions.invoke('line-auth', {
+        body: { code, redirect_uri: REDIRECT_URL },
+      });
+
+      if (error) throw error;
+
+      // 返ってきた token_hash を使って Supabase にログイン
+      const { error: loginError } = await supabase.auth.verifyOtp({
+        token_hash: data.token_hash,
+        type: 'magiclink',
+      });
+
+      if (loginError) throw loginError;
+
+      // ログイン成功後、URLパラメータを消去
+      window.history.replaceState({}, document.title, REDIRECT_URL);
+      
+    } catch (err) {
+      console.error('LINE Auth Error:', err);
+      setScreen('login');
+      alert('LINEログインに失敗しました。');
+    }
+  };
 
   const checkProfile = async (user) => {
     const { data } = await supabase.from('users').select('*').eq('id', user.id).single();
@@ -804,16 +844,15 @@ const App = () => {
     }
   };
 
-  const handleLineLogin = async () => {
-    // Supabase の設定に合わせて provider 名を調整してください
-    // 'line' (標準) または 'custom:line' (カスタムOIDC)
-    await supabase.auth.signInWithOAuth({
-      provider: 'custom:line', 
-      options: {
-        redirectTo: REDIRECT_URL,
-        scopes: 'profile', // IDトークンの検証エラー(HS256 vs ES256)を回避
-      },
-    });
+  const handleLineLogin = () => {
+    const LINE_CLIENT_ID = '2009662408'; 
+    const state = 'line_direct';
+    const scopes = encodeURIComponent('profile openid');
+    const redirect = encodeURIComponent(REDIRECT_URL);
+    
+    // Supabase Auth を介さず、直接 LINE の認証画面へ飛ばす
+    const lineAuthUrl = `https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id=${LINE_CLIENT_ID}&redirect_uri=${redirect}&state=${state}&scope=${scopes}`;
+    window.location.href = lineAuthUrl;
   };
 
   const handleGoogleLogin = async () => {
