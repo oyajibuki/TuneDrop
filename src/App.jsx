@@ -811,6 +811,7 @@ const App = () => {
       provider: 'custom:line', 
       options: {
         redirectTo: REDIRECT_URL,
+        scopes: 'profile', // IDトークンの検証エラー(HS256 vs ES256)を回避
       },
     });
   };
