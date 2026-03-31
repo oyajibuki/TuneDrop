@@ -552,7 +552,13 @@ const App = () => {
   };
 
   const handleGoogleLogin = async () => {
-    await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: REDIRECT_URL } });
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: REDIRECT_URL,
+        queryParams: { prompt: 'select_account' },
+      },
+    });
   };
 
   const handleProfileSubmit = async (e) => {
