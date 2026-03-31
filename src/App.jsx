@@ -164,34 +164,76 @@ const SpaceScreen = ({
   const [isDragging, setIsDragging] = useState(false);
   const [draggingDropId, setDraggingDropId] = useState(null);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
-  const [initialDist, setInitialDist] = useState(null);
+  const initialDistRef = useRef(null);
   const clickStartRef = useRef({ x: 0, y: 0 });
   const [showMenu, setShowMenu] = useState(false);
+  const canvasContainerRef = useRef(null);
 
   // ポップアップが変わったらメニューを閉じる
   useEffect(() => { setShowMenu(false); }, [selectedDrop]);
 
-  // ズーム処理 (マウスホイール)
+  // ピンチズーム：passive: false で addEventListener してブラウザ独自ズームを防ぐ
+  useEffect(() => {
+    const el = canvasContainerRef.current;
+    if (!el) return;
+
+    const onTouchStart = (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        initialDistRef.current = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+      }
+    };
+
+    const onTouchMove = (e) => {
+      if (e.touches.length === 2 && initialDistRef.current) {
+        e.preventDefault();
+        const currentDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const ratio = currentDist / initialDistRef.current;
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const cx = window.innerWidth / 2;
+        const cy = window.innerHeight / 2;
+
+        setScale(prev => {
+          const newScale = Math.min(Math.max(0.3, prev * ratio), 2.5);
+          // ピンチ中心点に向かってカメラを調整
+          setCamera(cam => ({
+            x: ((cam.x + (midX - cx) * (1 / prev - 1 / newScale)) + CANVAS_SIZE) % CANVAS_SIZE,
+            y: ((cam.y + (midY - cy) * (1 / prev - 1 / newScale)) + CANVAS_SIZE) % CANVAS_SIZE,
+          }));
+          return newScale;
+        });
+        initialDistRef.current = currentDist;
+      }
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: false });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+    };
+  }, []);
+
+  // ズーム処理 (マウスホイール) - カーソル位置に向かってズーム
   const handleWheel = (e) => {
-    // スクロールによるスケール変更 (0.3倍 〜 2.5倍の範囲)
-    setScale(prev => Math.min(Math.max(0.3, prev - e.deltaY * 0.001), 2.5));
-  };
-
-  // ズーム処理 (スマホのピンチイン・アウト)
-  const handleTouchStart = (e) => {
-    if (e.touches.length === 2) {
-      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      setInitialDist(dist);
-    }
-  };
-
-  const handleTouchMove = (e) => {
-    if (e.touches.length === 2 && initialDist) {
-      const currentDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      const delta = currentDist / initialDist;
-      setScale(prev => Math.min(Math.max(0.3, prev * delta), 2.5));
-      setInitialDist(currentDist);
-    }
+    e.preventDefault();
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2;
+    setScale(prev => {
+      const newScale = Math.min(Math.max(0.3, prev - e.deltaY * 0.001), 2.5);
+      setCamera(cam => ({
+        x: ((cam.x + (e.clientX - cx) * (1 / prev - 1 / newScale)) + CANVAS_SIZE) % CANVAS_SIZE,
+        y: ((cam.y + (e.clientY - cy) * (1 / prev - 1 / newScale)) + CANVAS_SIZE) % CANVAS_SIZE,
+      }));
+      return newScale;
+    });
   };
 
   // ドラッグ処理 (空間のパン ＆ Tuneの移動)
@@ -241,7 +283,7 @@ const SpaceScreen = ({
       setDraggingDropId(null);
     }
     setIsDragging(false);
-    setInitialDist(null);
+    initialDistRef.current = null;
   };
 
   // Tuneに触れた時のイベント
@@ -274,15 +316,14 @@ const SpaceScreen = ({
       </button>
 
       {/* ドラッグ＆ズーム操作を受け付ける背景レイヤー */}
-      <div 
+      <div
+        ref={canvasContainerRef}
         className="absolute inset-0 touch-none select-none overflow-hidden z-0"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
         onWheel={handleWheel}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
         style={{ cursor: isDragging && !draggingDropId ? 'grabbing' : 'grab' }}
       >
         <div 
