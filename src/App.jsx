@@ -509,8 +509,9 @@ const AvatarCropModal = ({ imageFile, onConfirm, onCancel }) => {
   const containerRef = useRef(null);
   const [imgSrc, setImgSrc] = useState(null);
   const [loaded, setLoaded] = useState(false);
-  const offsetRef = useRef({ x: 0, y: 0 });
+  const offsetRef = useRef({ x: 0, y: 0 }); // visual center offset from circle center
   const scaleRef = useRef(1);
+  const rotationRef = useRef(0); // 0, 90, 180, 270
   const [, forceRender] = useState(0);
   const lastTouchRef = useRef(null);
   const lastPinchRef = useRef(null);
@@ -523,20 +524,40 @@ const AvatarCropModal = ({ imageFile, onConfirm, onCancel }) => {
     reader.readAsDataURL(imageFile);
   }, [imageFile]);
 
+  // Base scale ensuring the image (in its rotated orientation) covers the crop circle
   const getBaseScale = () => {
     if (!imgRef.current?.naturalWidth) return 1;
     return Math.max(CROP_SIZE / imgRef.current.naturalWidth, CROP_SIZE / imgRef.current.naturalHeight);
   };
 
+  // Element pixel dimensions (pre-rotation CSS size)
+  const getDims = () => {
+    if (!imgRef.current?.naturalWidth) return { dw: CROP_SIZE, dh: CROP_SIZE };
+    const bs = getBaseScale();
+    return {
+      dw: imgRef.current.naturalWidth * bs * scaleRef.current,
+      dh: imgRef.current.naturalHeight * bs * scaleRef.current,
+    };
+  };
+
+  // After CSS rotate, the visual X-span = dh and Y-span = dw when rotated 90/270
   const clamp = () => {
     if (!imgRef.current?.naturalWidth) return;
-    const bs = getBaseScale();
-    const dw = imgRef.current.naturalWidth * bs * scaleRef.current;
-    const dh = imgRef.current.naturalHeight * bs * scaleRef.current;
-    const mx = Math.max(0, (dw - CROP_SIZE) / 2);
-    const my = Math.max(0, (dh - CROP_SIZE) / 2);
+    const { dw, dh } = getDims();
+    const isRot = (rotationRef.current / 90) % 2 !== 0;
+    const mx = Math.max(0, ((isRot ? dh : dw) - CROP_SIZE) / 2);
+    const my = Math.max(0, ((isRot ? dw : dh) - CROP_SIZE) / 2);
     offsetRef.current.x = Math.max(-mx, Math.min(mx, offsetRef.current.x));
     offsetRef.current.y = Math.max(-my, Math.min(my, offsetRef.current.y));
+  };
+
+  // Zoom toward a point (midX, midY) in container coordinates
+  const zoomToward = (midX, midY, newScale) => {
+    const ratio = newScale / scaleRef.current;
+    offsetRef.current.x = (midX - CROP_SIZE / 2) * (1 - ratio) + offsetRef.current.x * ratio;
+    offsetRef.current.y = (midY - CROP_SIZE / 2) * (1 - ratio) + offsetRef.current.y * ratio;
+    scaleRef.current = newScale;
+    clamp();
   };
 
   useEffect(() => {
@@ -550,7 +571,11 @@ const AvatarCropModal = ({ imageFile, onConfirm, onCancel }) => {
       } else if (e.touches.length === 2) {
         const dx = e.touches[1].clientX - e.touches[0].clientX;
         const dy = e.touches[1].clientY - e.touches[0].clientY;
-        lastPinchRef.current = { dist: Math.hypot(dx, dy) };
+        lastPinchRef.current = {
+          dist: Math.hypot(dx, dy),
+          midX: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+          midY: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+        };
         lastTouchRef.current = null;
       }
     };
@@ -566,17 +591,26 @@ const AvatarCropModal = ({ imageFile, onConfirm, onCancel }) => {
         const dx = e.touches[1].clientX - e.touches[0].clientX;
         const dy = e.touches[1].clientY - e.touches[0].clientY;
         const newDist = Math.hypot(dx, dy);
-        scaleRef.current = Math.max(1, Math.min(5, scaleRef.current * (newDist / lastPinchRef.current.dist)));
-        clamp();
-        lastPinchRef.current = { dist: newDist };
+        const newMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const newMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const rect = el.getBoundingClientRect();
+        const midXInContainer = lastPinchRef.current.midX - rect.left;
+        const midYInContainer = lastPinchRef.current.midY - rect.top;
+        const newScale = Math.max(1, Math.min(5, scaleRef.current * (newDist / lastPinchRef.current.dist)));
+        zoomToward(midXInContainer, midYInContainer, newScale);
+        lastPinchRef.current = { dist: newDist, midX: newMidX, midY: newMidY };
         forceRender(n => n + 1);
       }
     };
-    const onTouchEnd = () => { lastTouchRef.current = null; lastPinchRef.current = null; };
+    const onTouchEnd = (e) => {
+      if (e.touches.length < 2) lastPinchRef.current = null;
+      if (e.touches.length < 1) lastTouchRef.current = null;
+    };
     const onWheel = (e) => {
       e.preventDefault();
-      scaleRef.current = Math.max(1, Math.min(5, scaleRef.current * (e.deltaY > 0 ? 0.9 : 1.1)));
-      clamp();
+      const rect = el.getBoundingClientRect();
+      const newScale = Math.max(1, Math.min(5, scaleRef.current * (e.deltaY > 0 ? 0.9 : 1.1)));
+      zoomToward(e.clientX - rect.left, e.clientY - rect.top, newScale);
       forceRender(n => n + 1);
     };
     el.addEventListener('touchstart', onTouchStart, { passive: false });
@@ -602,31 +636,33 @@ const AvatarCropModal = ({ imageFile, onConfirm, onCancel }) => {
   };
   const handleMouseUp = () => { isDraggingRef.current = false; };
 
+  const handleRotate = (dir) => {
+    rotationRef.current = ((rotationRef.current + dir * 90) + 360) % 360;
+    scaleRef.current = 1;
+    offsetRef.current = { x: 0, y: 0 };
+    forceRender(n => n + 1);
+  };
+
   const handleConfirm = () => {
     if (!imgRef.current || !loaded) return;
-    const bs = getBaseScale();
-    const dw = imgRef.current.naturalWidth * bs * scaleRef.current;
-    const dh = imgRef.current.naturalHeight * bs * scaleRef.current;
+    const { dw, dh } = getDims();
     const OUTPUT = 200;
     const canvas = document.createElement('canvas');
     canvas.width = OUTPUT; canvas.height = OUTPUT;
     const ctx = canvas.getContext('2d');
+    // Clip to circle first (in canvas coordinate space)
     ctx.beginPath();
     ctx.arc(OUTPUT / 2, OUTPUT / 2, OUTPUT / 2, 0, Math.PI * 2);
     ctx.clip();
     const ratio = OUTPUT / CROP_SIZE;
-    ctx.drawImage(
-      imgRef.current,
-      (CROP_SIZE / 2 - dw / 2 + offsetRef.current.x) * ratio,
-      (CROP_SIZE / 2 - dh / 2 + offsetRef.current.y) * ratio,
-      dw * ratio, dh * ratio
-    );
+    // Replicate CSS: translate to image center, rotate, draw centered
+    ctx.translate((CROP_SIZE / 2 + offsetRef.current.x) * ratio, (CROP_SIZE / 2 + offsetRef.current.y) * ratio);
+    ctx.rotate(rotationRef.current * Math.PI / 180);
+    ctx.drawImage(imgRef.current, -dw / 2 * ratio, -dh / 2 * ratio, dw * ratio, dh * ratio);
     canvas.toBlob(blob => onConfirm(blob), 'image/jpeg', 0.85);
   };
 
-  const bs = imgRef.current?.naturalWidth ? getBaseScale() : 1;
-  const dw = imgRef.current?.naturalWidth ? imgRef.current.naturalWidth * bs * scaleRef.current : CROP_SIZE;
-  const dh = imgRef.current?.naturalWidth ? imgRef.current.naturalHeight * bs * scaleRef.current : CROP_SIZE;
+  const { dw, dh } = getDims();
 
   return (
     <div className="absolute inset-0 z-[300] bg-black/80 flex flex-col items-center justify-center p-4">
@@ -653,6 +689,7 @@ const AvatarCropModal = ({ imageFile, onConfirm, onCancel }) => {
                 height: dh,
                 left: CROP_SIZE / 2 - dw / 2 + offsetRef.current.x,
                 top: CROP_SIZE / 2 - dh / 2 + offsetRef.current.y,
+                transform: `rotate(${rotationRef.current}deg)`,
                 pointerEvents: 'none',
                 userSelect: 'none',
               }}
@@ -661,7 +698,11 @@ const AvatarCropModal = ({ imageFile, onConfirm, onCancel }) => {
           )}
           {!loaded && <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm">読み込み中…</div>}
         </div>
-        <p className="text-center text-xs text-slate-400 mt-3 mb-5">ドラッグで移動・ピンチで拡大縮小</p>
+        <p className="text-center text-xs text-slate-400 mt-2">ドラッグで移動・ピンチで拡大縮小</p>
+        <div className="flex justify-center gap-4 mt-3 mb-4">
+          <button type="button" onClick={() => handleRotate(-1)} className="px-5 py-2 bg-slate-100 rounded-xl text-slate-600 hover:bg-slate-200 transition text-sm font-medium">↺ 左90°</button>
+          <button type="button" onClick={() => handleRotate(1)} className="px-5 py-2 bg-slate-100 rounded-xl text-slate-600 hover:bg-slate-200 transition text-sm font-medium">右90° ↻</button>
+        </div>
         <div className="flex gap-3">
           <button onClick={onCancel} className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-2xl font-bold hover:bg-slate-200 transition">キャンセル</button>
           <button onClick={handleConfirm} disabled={!loaded} className="flex-1 py-3 bg-sky-500 text-white rounded-2xl font-bold hover:bg-sky-600 transition disabled:opacity-50">決定</button>
