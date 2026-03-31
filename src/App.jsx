@@ -805,22 +805,34 @@ const App = () => {
   }, []);
 
   const handleLineAuthCallback = async (code) => {
+    console.log('--- LINE Auth Callback Start ---');
     setScreen('loading');
     try {
       // 自作の Edge Function を呼び出してログイン
+      console.log('Invoking line-auth function...');
       const { data, error } = await supabase.functions.invoke('line-auth', {
         body: { code, redirect_uri: REDIRECT_URL },
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Edge Function Error:', error);
+        throw error;
+      }
+
+      console.log('Edge Function Success! Verifying token hash...');
 
       // 返ってきた token_hash を使って Supabase にログイン
-      const { error: loginError } = await supabase.auth.verifyOtp({
+      const { data: authData, error: loginError } = await supabase.auth.verifyOtp({
         token_hash: data.token_hash,
         type: 'magiclink',
       });
 
-      if (loginError) throw loginError;
+      if (loginError) {
+        console.error('Verify OTP Error:', loginError);
+        throw loginError;
+      }
+
+      console.log('Login Successful! User ID:', authData.user?.id);
 
       // ログイン成功後、URLパラメータを消去
       window.history.replaceState({}, document.title, REDIRECT_URL);
