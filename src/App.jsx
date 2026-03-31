@@ -834,8 +834,9 @@ const App = () => {
 
       console.log('Login Successful! User ID:', authData.user?.id);
 
-      // ログイン成功後、URLパラメータを消去
-      window.history.replaceState({}, document.title, REDIRECT_URL);
+      // 100%確実な荒技: セッション確立後にページを強制リロードする
+      console.log('Hard reloading now...');
+      window.location.href = REDIRECT_URL;
       
     } catch (err) {
       console.error('LINE Auth Error:', err);
