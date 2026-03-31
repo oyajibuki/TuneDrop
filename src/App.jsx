@@ -510,7 +510,8 @@ const SpaceScreen = ({
 
       {/* Drop Input UI */}
       <div 
-        className="absolute bottom-8 left-1/2 transform -translate-x-1/2 w-[90%] max-w-md z-40"
+        className="absolute left-1/2 transform -translate-x-1/2 w-[90%] max-w-md z-40"
+        style={{ bottom: 'calc(2rem + env(safe-area-inset-bottom))' }}
         onPointerDown={stopPropagation}
         onPointerMove={stopPropagation}
         onPointerUp={stopPropagation}
