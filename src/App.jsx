@@ -205,7 +205,11 @@ const ProfileScreen = ({ userProfile, setUserProfile, onSubmit }) => (
   </div>
 );
 
-// --- SpaceScreen ---
+const SpaceScreen = ({
+  drops, setDrops, camera, setCamera, now,
+  myDropText, setMyDropText, myDropCooldown, handleMyDrop,
+  selectedDrop, setSelectedDrop, handleCatch, handleSyncRequest, handleDeleteDrop, handleLike,
+  handleBlock, handleReport, setIsSettingsOpen,
   dropMedia, setDropMedia, dropMediaInputRef,
   scale, setScale,
 }) => {
@@ -486,9 +490,9 @@ const RoomScreen = ({ roomTime, chatPartner, messages, chatInput, setChatInput, 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   return (
-    <div className="flex flex-col bg-sky-50 text-slate-800 relative" style={{ height: '100dvh' }}>
+    <div className="flex flex-col bg-sky-50 text-slate-800 relative overflow-hidden" style={{ height: '100dvh' }}>
       <div
-        className="flex items-center justify-between bg-white/90 backdrop-blur-md border-b border-sky-100 shadow-sm z-10 shrink-0"
+        className="fixed top-0 left-0 right-0 flex items-center justify-between bg-white/95 backdrop-blur-md border-b border-sky-100 shadow-sm z-50 shrink-0"
         style={{ padding: '0.75rem 1rem', paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
       >
         <div className="flex items-center gap-3">
@@ -515,8 +519,9 @@ const RoomScreen = ({ roomTime, chatPartner, messages, chatInput, setChatInput, 
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gradient-to-b from-sky-100 to-sky-50 pb-20">
-        {messages.map((msg) => (
+      {/* メッセージリスト */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-24 scroll-smooth" style={{ marginTop: 'calc(3.5rem + env(safe-area-inset-top))' }}>
+        {messages.map(msg => (
           <div key={msg.id} className={`flex ${msg.isSystem ? 'justify-center' : msg.isMine ? 'justify-end' : 'justify-start'}`}>
             {msg.isSystem
               ? <span className="text-xs text-slate-500 bg-white/60 px-4 py-1.5 rounded-full font-medium shadow-sm">{msg.text}</span>
@@ -1029,11 +1034,31 @@ const App = () => {
         }
       ).subscribe();
     const timeout = setTimeout(async () => {
+      if (!currentRoomId) return;
       await supabase.from('rooms').update({ status: 'declined' }).eq('id', currentRoomId);
       setCurrentRoomId(null); setChatPartner(null); setScreen('space');
     }, 30000);
     return () => { supabase.removeChannel(channel); clearTimeout(timeout); };
   }, [screen, currentRoomId, isBotRoom]);
+
+  // ─── 初回入室 5秒後の Bot 着信 ───
+  useEffect(() => {
+    if (screen !== 'space' || !authUser) return;
+    const timer = setTimeout(() => {
+      // すでに着信がある場合はスキップ
+      setIncomingRequest(prev => {
+        if (prev) return prev;
+        const bot = BOT_USERS[Math.floor(Math.random() * BOT_USERS.length)];
+        return {
+          partner: { userName: bot.name, ageGroup: bot.ageGroup, avatar: bot.avatar, userId: bot.id },
+          dropText: 'はじめまして！空を眺めるのっていいですよね。',
+          roomId: null,
+          isBot: true,
+        };
+      });
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [screen, authUser]);
 
   // ─── 着信通知：自分のDropにCatchが来た ───
   useEffect(() => {
@@ -1204,6 +1229,26 @@ const App = () => {
 
   const handleSyncRequest = async () => {
     if (!authUser || !selectedDrop) return;
+    if (!selectedDrop.isOnline && !selectedDrop.isBot) {
+      alert('相手がオフラインのため、今は会話を開始できません。');
+      return;
+    }
+
+    if (selectedDrop.isBot) {
+      const bot = BOT_USERS.find(b => b.id === selectedDrop.userId);
+      setBotUser(bot || null);
+      setIsBotRoom(true);
+      setChatPartner(selectedDrop);
+      setScreen('waiting');
+      setSelectedDrop(null);
+      setTimeout(() => {
+        setScreen('room');
+        setRoomTime(INITIAL_ROOM_TIME);
+        setMessages([{ id: 'bot-sys-1', text: '波長が合いました。5分間のSyncを開始します。', isMine: false, isSystem: true }]);
+      }, 2000);
+      return;
+    }
+
     const expiresAt = new Date(Date.now() + INITIAL_ROOM_TIME * 1000).toISOString();
     const { data: room, error } = await supabase.from('rooms').insert({
       user1_id: selectedDrop.userId,
@@ -1216,9 +1261,10 @@ const App = () => {
     await supabase.from('messages').insert({ room_id: room.id, user_id: authUser.id, text: '波長が合いました。5分間のSyncを開始します。', is_system: true });
     setCurrentRoomId(room.id);
     setChatPartner(selectedDrop);
+    setIsBotRoom(false);
     setScreen('waiting');
     setSelectedDrop(null);
-    setTimeout(() => { setScreen('room'); setRoomTime(INITIAL_ROOM_TIME); setMessages([]); }, 2000);
+    // 注: 実ユーザーの場合は WaitingScreen の useEffect が status: active を検知して自動遷移します
   };
 
   const handleAcceptRequest = async () => {
@@ -1237,8 +1283,7 @@ const App = () => {
   };
 
   const handleDeclineRequest = async () => {
-    if (!incomingRequest) return;
-    if (!incomingRequest.isBot && incomingRequest.roomId) {
+    if (incomingRequest && incomingRequest.roomId) {
       await supabase.from('rooms').update({ status: 'declined' }).eq('id', incomingRequest.roomId);
     }
     setIncomingRequest(null);
