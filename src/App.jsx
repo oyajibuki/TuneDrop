@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MessageCircle, Heart, LogIn, Send, X, Clock, AlertCircle, Camera, MoreVertical, Flag, Ban, Settings, Trash2, LogOut, Edit2, DoorOpen } from 'lucide-react';
+import { 
+  Camera, MessageCircle, Settings, X, Heart, Flag, Ban, MoreVertical, 
+  Send, Clock, LogOut, CheckCircle, Trash2, Edit2, LogIn, Wind,
+} from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 // --- 定数 ---
@@ -204,7 +207,6 @@ const ProfileScreen = ({ userProfile, setUserProfile, onSubmit }) => (
     </form>
   </div>
 );
-
 const SpaceScreen = ({
   drops, setDrops, camera, setCamera, now,
   myDropText, setMyDropText, myDropCooldown, handleMyDrop,
@@ -213,6 +215,7 @@ const SpaceScreen = ({
   dropMedia, setDropMedia, dropMediaInputRef,
   scale, setScale,
 }) => {
+  const [isWinding, setIsWinding] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingDropId, setDraggingDropId] = useState(null);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
@@ -319,6 +322,43 @@ const SpaceScreen = ({
     setStartPos({ x: e.clientX, y: e.clientY });
     clickStartRef.current = { x: e.clientX, y: e.clientY };
   };
+  const handleWind = () => {
+    if (isWinding) return;
+    setIsWinding(true);
+    
+    // 同じキーワード（3文字以上）や同じユーザーをグループ化
+    const center = CANVAS_SIZE / 2;
+    const groups = {};
+    
+    const processedDrops = drops.map(d => {
+      let targetX = d.x, targetY = d.y;
+      const text = d.text.toLowerCase();
+      
+      // ルール1: 同じ単語（3文字以上）を含むものをグループ化
+      const words = text.split(/[\s,，、。.]+ /).filter(w => w.length >= 3);
+      let matchedKey = null;
+      for(const w of words) {
+        if (groups[w]) { matchedKey = w; break; }
+      }
+      
+      if (matchedKey) {
+        targetX = (groups[matchedKey].x + (Math.random() * 200 - 100) + CANVAS_SIZE) % CANVAS_SIZE;
+        targetY = (groups[matchedKey].y + (Math.random() * 200 - 100) + CANVAS_SIZE) % CANVAS_SIZE;
+      } else if (words.length > 0) {
+        groups[words[0]] = { x: (center + (Math.random() * 1000 - 500) + CANVAS_SIZE) % CANVAS_SIZE, y: (center + (Math.random() * 1000 - 500) + CANVAS_SIZE) % CANVAS_SIZE };
+        targetX = groups[words[0]].x; targetY = groups[words[0]].y;
+      }
+
+      return { ...d, x: targetX, y: targetY, isPopping: true };
+    });
+
+    setDrops(processedDrops);
+    setTimeout(() => {
+      setDrops(prev => prev.map(d => ({ ...d, isPopping: false })));
+      setIsWinding(false);
+    }, 1000);
+  };
+
   const stopPropagation = (e) => e.stopPropagation();
 
   return (
@@ -330,7 +370,8 @@ const SpaceScreen = ({
         @keyframes flash  { 0%{opacity:0.6} 100%{opacity:0} }
       `}</style>
 
-      <button onClick={() => setIsSettingsOpen(true)} className="absolute top-6 right-6 z-40 p-3 bg-white/40 backdrop-blur-md border border-white/60 rounded-full text-slate-700 hover:bg-white/60 transition shadow-sm">
+      <button onClick={() => setIsSettingsOpen(true)} className="absolute right-6 z-[100] p-3 bg-white/40 backdrop-blur-md border border-white/60 rounded-full text-slate-700 hover:bg-white/60 transition shadow-sm"
+        style={{ top: 'calc(1.5rem + env(safe-area-inset-top))' }}>
         <Settings size={22} />
       </button>
 
@@ -464,20 +505,48 @@ const SpaceScreen = ({
         style={{ bottom: 'calc(2rem + env(safe-area-inset-bottom))' }}
         onPointerDown={stopPropagation} onPointerMove={stopPropagation} onPointerUp={stopPropagation}
       >
-        <form onSubmit={handleMyDrop} className="relative">
-          <input
-            name="dropText" type="text"
-            value={myDropText}
-            onChange={(e) => setMyDropText(e.target.value)}
-            placeholder={myDropCooldown > 0 ? `次のDropまで ${myDropCooldown}秒...` : "今の気持ちをDropする..."}
-            disabled={myDropCooldown > 0}
-            className="w-full bg-white/80 border-2 border-white backdrop-blur-md rounded-full py-4 pl-6 pr-14 text-slate-800 placeholder-slate-500 focus:outline-none focus:bg-white shadow-lg disabled:opacity-70"
-            maxLength={30}
-          />
-          <button type="submit" disabled={myDropCooldown > 0} className="absolute right-2 top-2 bottom-2 aspect-square bg-sky-500 text-white rounded-full flex items-center justify-center disabled:opacity-50 hover:bg-sky-600 transition shadow-sm">
-            <Send size={18} />
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleWind}
+            className={`p-4 rounded-full bg-white/80 border-2 border-white backdrop-blur-md text-sky-500 shadow-lg transition-transform ${isWinding ? 'animate-spin' : 'hover:scale-110 active:scale-95'}`}
+          >
+            <Wind size={24} />
           </button>
-        </form>
+          <form onSubmit={handleMyDrop} className="flex-1 relative">
+            <input
+              name="dropText" type="text"
+              value={myDropText}
+              onChange={(e) => setMyDropText(e.target.value)}
+              placeholder={myDropCooldown > 0 ? `次のDropまで ${myDropCooldown}秒...` : "今の気持ちをDropする..."}
+              disabled={myDropCooldown > 0}
+              className="w-full bg-white/80 border-2 border-white backdrop-blur-md rounded-full py-4 pl-12 pr-14 text-slate-800 placeholder-slate-500 focus:outline-none focus:bg-white shadow-lg disabled:opacity-70 font-medium"
+              maxLength={30}
+            />
+            <input
+              ref={dropMediaInputRef} type="file" accept="image/*,video/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                if (file.type.startsWith('video') && file.size > MAX_VIDEO_SIZE) {
+                  alert('動画は50MB以内にしてください。'); return;
+                }
+                setDropMedia({ file, type: file.type, preview: URL.createObjectURL(file) });
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => dropMediaInputRef.current?.click()}
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 p-2 text-sky-400 hover:text-sky-500 z-10"
+            >
+              <Camera size={20} />
+            </button>
+            <button type="submit" disabled={myDropCooldown > 0} className="absolute right-2 top-2 bottom-2 aspect-square bg-sky-500 text-white rounded-full flex items-center justify-center disabled:opacity-50 hover:bg-sky-600 transition shadow-sm">
+              <Send size={18} />
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );
@@ -1162,10 +1231,14 @@ const App = () => {
       // Supabase Storage にアップロード
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('drops-media')
-        .upload(fileName, fileToUpload, { contentType: dropMedia.type });
+        .upload(fileName, fileToUpload, { 
+          contentType: dropMedia.type,
+          upsert: true 
+        });
 
       if (uploadError) {
-        alert('メディアのアップロードに失敗しました: ' + uploadError.message);
+        console.error('Upload error details:', uploadError);
+        alert(`メディアのアップロードに失敗しました (${uploadError.name}): ${uploadError.message}`);
         return;
       }
 
