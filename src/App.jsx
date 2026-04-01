@@ -7,9 +7,71 @@ const NG_WORDS = ['バカ', '死ね', 'LINE', 'メアド', '@', '.com', 'http', 
 const INITIAL_ROOM_TIME = 300;
 const EXTEND_TIME = 300;
 const CANVAS_SIZE = 3000;
-const DROP_LIFETIME = 30 * 60 * 1000; // 30分
+// [POC_ONLY] Drop寿命を実質無制限。ユーザー100名前後になったら戻す
+const DROP_LIFETIME = 9999 * 24 * 60 * 60 * 1000;
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
 
 const REDIRECT_URL = 'https://oyajibuki.github.io/TuneDrop/';
+
+// --- 仮想ユーザー（Bot）定義 ---
+const BOT_USERS = [
+  { id: 'bot-1', name: 'そら', ageGroup: '20代', avatar: 'https://i.pravatar.cc/150?u=bot-sora' },
+  { id: 'bot-2', name: 'りく', ageGroup: '30代', avatar: 'https://i.pravatar.cc/150?u=bot-riku' },
+  { id: 'bot-3', name: 'みお', ageGroup: '20代', avatar: 'https://i.pravatar.cc/150?u=bot-mio' },
+  { id: 'bot-4', name: 'あお', ageGroup: '10代', avatar: 'https://i.pravatar.cc/150?u=bot-ao' },
+  { id: 'bot-5', name: 'ゆう', ageGroup: '30代', avatar: 'https://i.pravatar.cc/150?u=bot-yuu' },
+];
+const BOT_DROP_TEXTS = [
+  '眠れない','Vaundy聴いてる','なんか虚無','コーヒー飲みたい','映画みたい','誰かと話したい',
+  '夜が好き','最近つかれてる','明日やる気ない','空腹','雨の音が好き','一人の時間大切',
+  '急に泣きそう','懐かしい気分','ご飯何食べよう','何もしたくない','散歩したい','星みたい',
+  'ぼーっとしてた','最近よく夢みる','好きな曲きいてる','ねむい','焦ってる','何かしなきゃと思ってる',
+  'もやもやしてる','だれかいる?','今日調子よかった','笑いたい','久しぶりに連絡したい人いる',
+  'アイス食べたい','夜風気持ちいい','ゲームしたい','なんか前向きな気分','読書したい','料理してた',
+  'お風呂あがり','一人でいると考えすぎる','明日も頑張れるか不安','ちょっと孤独感ある',
+  '音楽にすくわれてる','どこかいきたい','ぼんやりしてる','なんかいいことあった','繋がりたい気分',
+  '深夜のテンション','缶コーヒーうまい','空見てた','ひとこといいたかっただけ',
+  '最近余裕ない','ゆっくりしたい','なんかドキドキしてる','いい夢みた',
+];
+const BOT_REPLIES = [
+  'わかる〜','それ最高だよね','今同じこと思ってた','すごくわかる','ほんとそれ',
+  'なんか共感しかない','えっそれ私も','ふかいね','そっかそっか','うんうん',
+  'きいてくれる？','なんかいいね','それな','たしかに','ちょっと気持ちわかるかも',
+  'おなじきもち','なんか懐かしい感じする','なんでだろうね','ふかいこというね',
+  'ありがとういってくれて','そういう夜あるよね','なんかほっとした',
+  'もうちょっと聞かせて','なんかいい','うまく言えないけどわかる',
+];
+const generateBotDrops = () => {
+  const colors = ['hsla(200,70%,90%,0.9)','hsla(280,60%,90%,0.9)','hsla(340,60%,92%,0.9)','hsla(150,50%,88%,0.9)','hsla(30,60%,90%,0.9)'];
+  return BOT_USERS.flatMap((bot, bi) =>
+    Array.from({ length: 2 + (bi % 2) }, (_, i) => ({
+      id: `${bot.id}-drop-${i}`,
+      text: BOT_DROP_TEXTS[(bi * 3 + i) % BOT_DROP_TEXTS.length],
+      userId: bot.id, userName: bot.name, ageGroup: bot.ageGroup, avatar: bot.avatar,
+      color: colors[(bi + i) % colors.length],
+      x: (CANVAS_SIZE / 2 + (Math.random() * 1600 - 800) + CANVAS_SIZE) % CANVAS_SIZE,
+      y: (CANVAS_SIZE / 2 + (Math.random() * 1600 - 800) + CANVAS_SIZE) % CANVAS_SIZE,
+      animType: (bi + i) % 3 + 1, animDelay: -Math.random() * 5,
+      isMine: false, isOnline: false, isBot: true,
+      likes: 0, likedByMe: false, createdAt: Date.now() - Math.random() * 60000,
+      mediaUrl: null,
+    }))
+  );
+};
+const compressImage = (file) => new Promise((resolve) => {
+  const img = new Image();
+  const objectUrl = URL.createObjectURL(file);
+  img.onload = () => {
+    const MAX = 1080;
+    let { width, height } = img;
+    if (width > MAX || height > MAX) { const r = Math.min(MAX/width, MAX/height); width = Math.round(width*r); height = Math.round(height*r); }
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+    canvas.toBlob(blob => { URL.revokeObjectURL(objectUrl); resolve(blob); }, 'image/jpeg', 0.85);
+  };
+  img.src = objectUrl;
+});
 
 // --- ヘルパー ---
 const calculateAgeGroup = (birthDate) => {
@@ -46,6 +108,9 @@ const toLocalDrop = (drop, myUserId) => ({
   likes: 0,
   likedByMe: false,
   createdAt: new Date(drop.created_at).getTime(),
+  isBot: false,
+  mediaUrl: drop.media_url || null,
+  mediaType: drop.media_type || null,
 });
 
 // --- LoginScreen ---
@@ -141,11 +206,7 @@ const ProfileScreen = ({ userProfile, setUserProfile, onSubmit }) => (
 );
 
 // --- SpaceScreen ---
-const SpaceScreen = ({
-  drops, setDrops, camera, setCamera, now,
-  myDropText, setMyDropText, myDropCooldown, handleMyDrop,
-  selectedDrop, setSelectedDrop, handleCatch, handleSyncRequest, handleDeleteDrop, handleLike,
-  handleBlock, handleReport, setIsSettingsOpen,
+  dropMedia, setDropMedia, dropMediaInputRef,
   scale, setScale,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
@@ -312,7 +373,14 @@ const SpaceScreen = ({
                     <img src={drop.avatar} alt="avatar" className="w-12 h-12 rounded-full border-2 border-white object-cover shadow-sm pointer-events-none" draggable="false" />
                     <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${drop.isOnline ? 'bg-green-500' : 'bg-slate-400'}`}></span>
                   </div>
-                  <span className="text-base font-bold whitespace-nowrap text-slate-700 drop-shadow-sm pointer-events-none">{drop.text}</span>
+                  <span className="text-base font-bold whitespace-nowrap text-slate-700 drop-shadow-sm pointer-events-none flex items-center gap-1.5">
+                    {drop.text}
+                    {drop.mediaUrl && (
+                      <div className="p-1 bg-sky-100 rounded-lg text-sky-500">
+                        <Camera size={14} />
+                      </div>
+                    )}
+                  </span>
                   {likes > 0 && (
                     <span className="flex items-center gap-1 text-pink-500 text-sm font-bold ml-1 pointer-events-none">
                       <Heart size={14} fill="currentColor" /> {likes}
@@ -349,7 +417,18 @@ const SpaceScreen = ({
               {selectedDrop.isOnline ? 'オンライン' : 'オフライン'}
             </span>
           </div>
-          <p className="text-xl font-bold mb-8 text-slate-800 text-center">"{selectedDrop.text}"</p>
+          <p className="text-xl font-bold mb-4 text-slate-800 text-center">"{selectedDrop.text}"</p>
+          
+          {selectedDrop.mediaUrl && (
+             <div className="w-full max-h-60 rounded-2xl overflow-hidden mb-6 bg-slate-100 flex items-center justify-center">
+               {selectedDrop.mediaUrl.match(/\.(mp4|mov|webm)$|video/i) ? (
+                 <video src={selectedDrop.mediaUrl} controls className="w-full h-full object-contain" />
+               ) : (
+                 <img src={selectedDrop.mediaUrl} alt="drop-media" className="w-full h-full object-contain" />
+               )}
+             </div>
+          )}
+
           {selectedDrop.isMine ? (
             <button onClick={() => handleDeleteDrop(selectedDrop.id)} className="w-full py-3.5 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center gap-2 hover:bg-rose-100 transition font-bold shadow-sm">
               Dropを取り消す
@@ -407,8 +486,11 @@ const RoomScreen = ({ roomTime, chatPartner, messages, chatInput, setChatInput, 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   return (
-    <div className="flex flex-col h-screen bg-sky-50 text-slate-800 relative">
-      <div className="flex items-center justify-between p-4 bg-white/90 backdrop-blur-md border-b border-sky-100 shadow-sm z-10">
+    <div className="flex flex-col bg-sky-50 text-slate-800 relative" style={{ height: '100dvh' }}>
+      <div
+        className="flex items-center justify-between bg-white/90 backdrop-blur-md border-b border-sky-100 shadow-sm z-10 shrink-0"
+        style={{ padding: '0.75rem 1rem', paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
+      >
         <div className="flex items-center gap-3">
           <img src={chatPartner?.avatar || 'https://i.pravatar.cc/150?u=me'} alt="avatar" className="w-10 h-10 rounded-full border-2 border-white shadow-sm object-cover" />
           <span className="font-bold text-slate-700">{chatPartner?.userName || '匿名'}</span>
@@ -714,22 +796,24 @@ const AvatarCropModal = ({ imageFile, onConfirm, onCancel }) => {
         {/* Hidden img for pixel data */}
         {imgSrc && <img ref={imgRef} src={imgSrc} onLoad={() => setLoaded(true)} style={{ display: 'none' }} alt="" />}
 
-        {/* Canvas preview — circle shape via border-radius */}
-        <canvas
-          ref={canvasRef}
-          width={CROP_SIZE}
-          height={CROP_SIZE}
-          style={{ width: CROP_SIZE, height: CROP_SIZE, borderRadius: '50%', border: '4px solid #38bdf8', display: 'block', margin: '0 auto', cursor: 'grab', touchAction: 'none' }}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-        />
-        {!loaded && (
-          <div style={{ width: CROP_SIZE, height: CROP_SIZE, borderRadius: '50%', border: '4px solid #38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', color: '#94a3b8', fontSize: 14, position: 'absolute', top: 'auto' }}>
-            読み込み中…
-          </div>
-        )}
+        {/* Canvas preview */}
+        <div style={{ display: 'flex', justifyContent: 'center', position: 'relative' }}>
+          <canvas
+            ref={canvasRef}
+            width={CROP_SIZE}
+            height={CROP_SIZE}
+            style={{ width: CROP_SIZE, height: CROP_SIZE, borderRadius: '50%', border: '4px solid #38bdf8', display: 'block', cursor: 'grab', touchAction: 'none', flexShrink: 0 }}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+          />
+          {!loaded && (
+            <div style={{ position: 'absolute', width: CROP_SIZE, height: CROP_SIZE, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 14, background: 'rgba(255,255,255,0.8)' }}>
+              読み込み中…
+            </div>
+          )}
+        </div>
 
         <p className="text-center text-xs text-slate-400 mt-2">ドラッグで移動・ピンチで拡大縮小</p>
         <div className="flex justify-center gap-4 mt-3 mb-4">
@@ -758,6 +842,8 @@ const App = () => {
   const [now, setNow] = useState(Date.now());
   const [myDropText, setMyDropText] = useState('');
   const [myDropCooldown, setMyDropCooldown] = useState(0);
+  const [dropMedia, setDropMedia] = useState(null); // { file, preview, type }
+  const dropMediaInputRef = useRef(null);
   const [selectedDrop, setSelectedDrop] = useState(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -775,6 +861,8 @@ const App = () => {
   const [extendRequested, setExtendRequested] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [incomingRequest, setIncomingRequest] = useState(null);
+  const [isBotRoom, setIsBotRoom] = useState(false);
+  const [botUser, setBotUser] = useState(null);
 
   const authUserRef = useRef(null);
   authUserRef.current = authUser;
@@ -893,18 +981,18 @@ const App = () => {
     else alert('プロフィール保存に失敗しました: ' + error.message);
   };
 
-  // ─── Drops: 初期ロード + Realtime ───
+  // ─── Drops: 初期ロード + Realtime + Bot Drops ───
   useEffect(() => {
     if (screen !== 'space' || !authUser) return;
     let channel;
 
     const loadDrops = async () => {
-      const cutoff = new Date(Date.now() - DROP_LIFETIME).toISOString();
+      // [POC_ONLY] cutoffなしで全取得しBotを混入
       const { data } = await supabase
         .from('drops')
-        .select('*, users(name, avatar_url, is_online, birth_date)')
-        .gte('created_at', cutoff);
-      if (data) setDrops(data.map(d => toLocalDrop(d, authUser.id)));
+        .select('*, users(name, avatar_url, is_online, birth_date)');
+      const realDrops = data ? data.map(d => toLocalDrop(d, authUser.id)) : [];
+      setDrops([...realDrops, ...generateBotDrops()]);
     };
     loadDrops();
 
@@ -922,17 +1010,30 @@ const App = () => {
       })
       .subscribe();
 
-    // Drop の自動削除タイマー（クライアント側表示制御）
-    const timer = setInterval(() => {
-      setNow(Date.now());
-      setDrops(prev => prev.filter(d => Date.now() - d.createdAt < DROP_LIFETIME));
-    }, 5000);
+    const timer = setInterval(() => { setNow(Date.now()); }, 5000);
 
     return () => {
       supabase.removeChannel(channel);
       clearInterval(timer);
     };
   }, [screen, authUser]);
+
+  // ─── WaitingScreen: ルームのステータス変化を監視（実ユーザーのみ）───
+  useEffect(() => {
+    if (screen !== 'waiting' || !currentRoomId || isBotRoom) return;
+    const channel = supabase.channel(`room-status:${currentRoomId}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${currentRoomId}` },
+        (payload) => {
+          if (payload.new.status === 'active') { setScreen('room'); setRoomTime(INITIAL_ROOM_TIME); setMessages([]); }
+          else if (payload.new.status === 'declined') { setCurrentRoomId(null); setChatPartner(null); setScreen('space'); }
+        }
+      ).subscribe();
+    const timeout = setTimeout(async () => {
+      await supabase.from('rooms').update({ status: 'declined' }).eq('id', currentRoomId);
+      setCurrentRoomId(null); setChatPartner(null); setScreen('space');
+    }, 30000);
+    return () => { supabase.removeChannel(channel); clearTimeout(timeout); };
+  }, [screen, currentRoomId, isBotRoom]);
 
   // ─── 着信通知：自分のDropにCatchが来た ───
   useEffect(() => {
@@ -955,6 +1056,7 @@ const App = () => {
             },
             dropText: myDrop?.text || '...',
             roomId: room.id,
+            isBot: false,
           });
         }
       )
@@ -1019,17 +1121,59 @@ const App = () => {
   const handleMyDrop = async (e) => {
     e.preventDefault();
     if (!myDropText.trim() || myDropCooldown > 0 || !authUser) return;
+
+    let mediaUrl = null;
+    let mediaType = null;
+
+    if (dropMedia) {
+      const fileName = `${authUser.id}_${Date.now()}`;
+      let fileToUpload = dropMedia.file;
+
+      // 画像の場合はあらかじめ圧縮
+      if (dropMedia.type.startsWith('image/')) {
+        fileToUpload = await compressImage(dropMedia.file);
+      }
+
+      // Supabase Storage にアップロード
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('drops-media')
+        .upload(fileName, fileToUpload, { contentType: dropMedia.type });
+
+      if (uploadError) {
+        alert('メディアのアップロードに失敗しました: ' + uploadError.message);
+        return;
+      }
+
+      const { data: { publicUrl } } = supabase.storage.from('drops-media').getPublicUrl(fileName);
+      mediaUrl = publicUrl;
+      mediaType = dropMedia.type;
+    }
+
     const pos = getPositionForDrop(myDropText, drops, true);
     const color = `hsla(${Math.random() * 360}, 60%, 90%, 0.9)`;
     const { data, error } = await supabase.from('drops').insert({
       user_id: authUser.id, text: myDropText, color,
       pos_x: pos.x, pos_y: pos.y, anim_type: Math.floor(Math.random() * 3) + 1,
+      media_url: mediaUrl, media_type: mediaType,
     }).select('*, users(name, avatar_url, is_online, birth_date)').single();
+
     if (!error && data) {
       setDrops(prev => prev.find(d => d.id === data.id) ? prev : [...prev, toLocalDrop(data, authUser.id)]);
       setMyDropCooldown(60);
+      const droppedText = myDropText;
       setMyDropText('');
+      setDropMedia(null);
       setCamera({ x: data.pos_x, y: data.pos_y });
+      // Drop待5秒後にBotから着信リクエスト
+      setTimeout(() => {
+        const bot = BOT_USERS[Math.floor(Math.random() * BOT_USERS.length)];
+        setIncomingRequest({
+          partner: { userName: bot.name, ageGroup: bot.ageGroup, avatar: bot.avatar, userId: bot.id },
+          dropText: droppedText, roomId: null, isBot: true,
+        });
+      }, 5000);
+    } else if (error) {
+      alert('投稿に失敗しました: ' + error.message);
     }
   };
 
@@ -1064,7 +1208,7 @@ const App = () => {
       user1_id: selectedDrop.userId,
       user2_id: authUser.id,
       expires_at: expiresAt,
-      status: 'active',
+      status: 'pending',
     }).select().single();
     if (error) { alert('接続に失敗しました: ' + error.message); return; }
     // システムメッセージを挿入
@@ -1078,30 +1222,53 @@ const App = () => {
 
   const handleAcceptRequest = async () => {
     if (!incomingRequest) return;
-    setCurrentRoomId(incomingRequest.roomId);
-    setChatPartner(incomingRequest.partner);
+    if (incomingRequest.isBot) {
+      const bot = BOT_USERS.find(b => b.id === incomingRequest.partner.userId);
+      setBotUser(bot || null); setIsBotRoom(true);
+      setChatPartner(incomingRequest.partner); setIncomingRequest(null);
+      setScreen('room'); setRoomTime(INITIAL_ROOM_TIME);
+      setMessages([{ id: 'bot-sys-1', text: '波長が合いました。5分間のSyncを開始します。', isMine: false, isSystem: true }]);
+      return;
+    }
+    await supabase.from('rooms').update({ status: 'active' }).eq('id', incomingRequest.roomId);
+    setCurrentRoomId(incomingRequest.roomId); setChatPartner(incomingRequest.partner);
+    setIncomingRequest(null); setScreen('room'); setRoomTime(INITIAL_ROOM_TIME); setMessages([]);
+  };
+
+  const handleDeclineRequest = async () => {
+    if (!incomingRequest) return;
+    if (!incomingRequest.isBot && incomingRequest.roomId) {
+      await supabase.from('rooms').update({ status: 'declined' }).eq('id', incomingRequest.roomId);
+    }
     setIncomingRequest(null);
-    setScreen('room');
-    setRoomTime(INITIAL_ROOM_TIME);
-    setMessages([]);
   };
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!chatInput.trim() || !currentRoomId || !authUser) return;
+    if (!chatInput.trim() || !authUser) return;
     if (NG_WORDS.some(w => chatInput.toLowerCase().includes(w))) {
       setErrorMessage('送信できない言葉が含まれています。');
       setTimeout(() => setErrorMessage(''), 3000);
       return;
     }
+    if (isBotRoom) {
+      const myMsg = { id: `local-${Date.now()}`, text: chatInput, isMine: true, isSystem: false };
+      setMessages(prev => [...prev, myMsg]); setChatInput('');
+      setTimeout(() => {
+        const reply = BOT_REPLIES[Math.floor(Math.random() * BOT_REPLIES.length)];
+        setMessages(prev => [...prev, { id: `bot-${Date.now()}`, text: reply, isMine: false, isSystem: false }]);
+      }, 1000 + Math.random() * 2000);
+      return;
+    }
+    if (!currentRoomId) return;
     await supabase.from('messages').insert({ room_id: currentRoomId, user_id: authUser.id, text: chatInput, is_system: false });
     setChatInput('');
   };
 
   const handleFadeOut = () => {
     setScreen('fade');
-    setCurrentRoomId(null);
-    setChatPartner(null);
+    setCurrentRoomId(null); setChatPartner(null);
+    setIsBotRoom(false); setBotUser(null);
     setTimeout(() => { setScreen('space'); setRoomTime(INITIAL_ROOM_TIME); setMessages([]); setExtendRequested(false); }, 1500);
   };
 
@@ -1194,6 +1361,7 @@ const App = () => {
           handleSyncRequest={handleSyncRequest} handleDeleteDrop={handleDeleteDrop} handleLike={handleLike}
           handleBlock={handleBlock} handleReport={handleReport} setIsSettingsOpen={setIsSettingsOpen}
           scale={scale} setScale={setScale}
+          dropMedia={dropMedia} setDropMedia={setDropMedia} dropMediaInputRef={dropMediaInputRef}
         />
       )}
       {screen === 'room'    && (
@@ -1341,7 +1509,7 @@ const App = () => {
               あなたの「{incomingRequest.dropText}」に<br />共感して会話を希望しています！
             </p>
             <div className="flex w-full gap-3">
-              <button onClick={() => setIncomingRequest(null)} className="flex-1 py-3.5 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition">見送る</button>
+              <button onClick={handleDeclineRequest} className="flex-1 py-3.5 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition">見送る</button>
               <button onClick={handleAcceptRequest} className="flex-1 py-3.5 bg-gradient-to-r from-sky-500 to-blue-500 text-white rounded-2xl font-bold shadow-md hover:opacity-90 transition flex items-center justify-center gap-2">
                 <MessageCircle size={20} /> 会話する
               </button>
