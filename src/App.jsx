@@ -303,7 +303,7 @@ const ProfileScreen = ({ userProfile, setUserProfile, onSubmit }) => (
     if (draggingDropId) {
       const drop = drops.find(d => d.id === draggingDropId);
       const dist = Math.hypot(e.clientX - clickStartRef.current.x, e.clientY - clickStartRef.current.y);
-      if (dist < 10 && drop) handleCatch(drop);
+      if (dist < 20 && drop) handleCatch(drop);
       setDraggingDropId(null);
     }
     setIsDragging(false);
@@ -1158,7 +1158,8 @@ const App = () => {
     }).select('*, users(name, avatar_url, is_online, birth_date)').single();
 
     if (!error && data) {
-      setDrops(prev => prev.find(d => d.id === data.id) ? prev : [...prev, toLocalDrop(data, authUser.id)]);
+      const localDrop = toLocalDrop(data, authUser.id, userProfile);
+      setDrops(prev => prev.find(d => d.id === localDrop.id) ? prev : [...prev, localDrop]);
       setMyDropCooldown(60);
       const droppedText = myDropText;
       setMyDropText('');
