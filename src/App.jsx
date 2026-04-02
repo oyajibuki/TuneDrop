@@ -54,7 +54,7 @@ const generateBotDrops = (countPerBot = 8) => {
   const commonWords = ['暇', 'おなかすいた', 'ごはん', '音楽', '映画', '寝', '寂', '眠', '疲れ', '仕事', '学校', 'だるい', '最高', 'いいこと', '悩み', '空'];
   const clusters = {};
 
-  return BOT_USERS.flatMap((bot, bi) =>
+  const botDrops = BOT_USERS.flatMap((bot, bi) =>
     Array.from({ length: countPerBot }, (_, i) => {
       const text = BOT_DROP_TEXTS[Math.floor(Math.random() * BOT_DROP_TEXTS.length)];
       const matchedIdx = commonWords.findIndex(w => text.includes(w));
@@ -82,6 +82,26 @@ const generateBotDrops = (countPerBot = 8) => {
       };
     })
   );
+
+  const CANVAS_SIZE = 4000;
+  botDrops.push({
+    id: `ad-oshipay-${Date.now()}`,
+    text: "OshiPay\nその感動、今すぐカタチに。",
+    link: "https://oshipay.me/",
+    userId: "ad-oshipay",
+    userName: "Sponsored",
+    ageGroup: "広告",
+    avatar: "https://oshipay.me/favicon.ico",
+    color: "hsla(45, 100%, 85%, 0.95)",
+    x: Math.random() * CANVAS_SIZE,
+    y: Math.random() * CANVAS_SIZE,
+    animType: 1, animDelay: 0,
+    isMine: false, isOnline: true, isBot: true,
+    likes: 99, likedByMe: false, createdAt: Date.now(),
+    mediaUrl: null,
+  });
+
+  return botDrops;
 };
 const compressImage = (file) => new Promise((resolve) => {
   const img = new Image();
@@ -488,7 +508,12 @@ const SpaceScreen = ({
               {selectedDrop.isOnline ? 'オンライン' : 'オフライン'}
             </span>
           </div>
-          <p className="text-xl font-bold mb-4 text-slate-800 text-center">"{selectedDrop.text}"</p>
+          <p className="text-xl font-bold mb-4 text-slate-800 text-center whitespace-pre-wrap">"{selectedDrop.text}"</p>
+          {selectedDrop.link && (
+            <a href={selectedDrop.link} target="_blank" rel="noopener noreferrer" className="w-full mb-4 py-3 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center font-bold hover:bg-sky-200 transition shadow-sm">
+              公式サイトを開く
+            </a>
+          )}
           
           {selectedDrop.mediaUrl && (
              <div className="w-full max-h-60 rounded-2xl overflow-hidden mb-6 bg-slate-100 flex items-center justify-center">
