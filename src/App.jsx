@@ -14,7 +14,8 @@ const CANVAS_SIZE = 5000;
 const MAX_DROPS = 500;
 // Drop寿命を 30分 に制限（ユーザーフィードバックによりウザさを解消）
 const DROP_LIFETIME = 30 * 60 * 1000;
-const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_VIDEO_SIZE = 30 * 1024 * 1024; // 30MB
+const MAX_VIDEO_DURATION = 30; // 30s
 
 const REDIRECT_URL = 'https://oyajibuki.github.io/TuneDrop/';
 
@@ -526,7 +527,7 @@ const SpaceScreen = ({
           {selectedDrop.mediaUrl && (
              <div className="w-full max-h-60 rounded-2xl overflow-hidden mb-6 bg-slate-100 flex items-center justify-center">
                {selectedDrop.mediaType && selectedDrop.mediaType.startsWith('video') ? (
-                 <video src={selectedDrop.mediaUrl} controls className="w-full h-full object-contain" />
+                 <video src={selectedDrop.mediaUrl} controls autoPlay muted loop playsInline className="w-full h-full object-contain" />
                ) : (
                  <img src={selectedDrop.mediaUrl} alt="drop-media" className="w-full h-full object-contain" />
                )}
@@ -574,7 +575,11 @@ const SpaceScreen = ({
                 <X size={20} />
               </button>
               {dropMedia.type.startsWith('video') ? (
-                <video src={dropMedia.preview} className="w-full h-full object-cover" controls playsInline />
+                <video 
+                  src={dropMedia.preview} 
+                  className="w-full h-full object-cover" 
+                  autoPlay muted loop playsInline 
+                />
               ) : (
                 <img src={dropMedia.preview} className="w-full h-full object-cover" alt="preview" />
               )}
@@ -589,8 +594,21 @@ const SpaceScreen = ({
                 maxLength={30}
                 rows={2}
               />
-              <button type="submit" disabled={myDropCooldown > 0} className="w-full py-3.5 bg-sky-500 text-white rounded-xl font-bold hover:bg-sky-600 transition flex justify-center items-center gap-2 disabled:opacity-50">
-                <Send size={18} /> Dropする
+              <button 
+                type="submit" 
+                disabled={myDropCooldown > 0 || isUploading} 
+                className="w-full py-3.5 bg-sky-500 text-white rounded-xl font-bold hover:bg-sky-600 transition flex justify-center items-center gap-2 disabled:opacity-50"
+              >
+                {isUploading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    送信中...
+                  </>
+                ) : (
+                  <>
+                    <Send size={18} /> Dropする
+                  </>
+                )}
               </button>
             </form>
           </div>
@@ -630,11 +648,24 @@ const SpaceScreen = ({
                 if (!file) return;
                 if (file.type.startsWith('image/')) {
                   setEditingMedia(file);
-                } else {
+                } else if (file.type.startsWith('video/')) {
                   if (file.size > MAX_VIDEO_SIZE) {
-                    alert('動画は50MB以内にしてください。'); return;
+                    alert(`動画は ${MAX_VIDEO_SIZE / (1024 * 1024)}MB 以内にしてください。`); 
+                    return;
                   }
-                  setDropMedia({ file, type: file.type, preview: URL.createObjectURL(file) });
+                  // 動画の長さをチェック
+                  const video = document.createElement('video');
+                  video.preload = 'metadata';
+                  const url = URL.createObjectURL(file);
+                  video.onloadedmetadata = () => {
+                    window.URL.revokeObjectURL(url);
+                    if (video.duration > MAX_VIDEO_DURATION) {
+                      alert(`動画は ${MAX_VIDEO_DURATION}秒 以内にしてください。`);
+                      return;
+                    }
+                    setDropMedia({ file, type: file.type, preview: URL.createObjectURL(file) });
+                  };
+                  video.src = url;
                 }
                 e.target.value = '';
               }}
@@ -1265,6 +1296,7 @@ const App = () => {
   const [myDropText, setMyDropText] = useState('');
   const [myDropCooldown, setMyDropCooldown] = useState(0);
   const [dropMedia, setDropMedia] = useState(null); // { file, preview, type }
+  const [isUploading, setIsUploading] = useState(false);
   const dropMediaInputRef = useRef(null);
   const [selectedDrop, setSelectedDrop] = useState(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -1619,65 +1651,70 @@ const App = () => {
 
   const handleMyDrop = async (e) => {
     e.preventDefault();
-    if (!myDropText.trim() || myDropCooldown > 0 || !authUser) return;
+    if (!myDropText.trim() || myDropCooldown > 0 || !authUser || isUploading) return;
 
-    let mediaUrl = null;
-    let mediaType = null;
+    setIsUploading(true);
+    try {
+      let mediaUrl = null;
+      let mediaType = null;
 
-    if (dropMedia) {
-      const fileName = `${authUser.id}_${Date.now()}`;
-      let fileToUpload = dropMedia.file;
+      if (dropMedia) {
+        const fileName = `${authUser.id}_${Date.now()}`;
+        let fileToUpload = dropMedia.file;
 
-      // 画像の場合はあらかじめ圧縮
-      if (dropMedia.type.startsWith('image/')) {
-        fileToUpload = await compressImage(dropMedia.file);
+        // 画像の場合はあらかじめ圧縮
+        if (dropMedia.type.startsWith('image/')) {
+          fileToUpload = await compressImage(dropMedia.file);
+        }
+
+        // Supabase Storage にアップロード
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('drops-media')
+          .upload(fileName, fileToUpload, { 
+            contentType: dropMedia.type,
+            upsert: true 
+          });
+
+        if (uploadError) {
+          console.error('Upload error details:', uploadError);
+          alert(`メディアのアップロードに失敗しました (${uploadError.name}): ${uploadError.message}`);
+          return;
+        }
+
+        const { data: { publicUrl } } = supabase.storage.from('drops-media').getPublicUrl(fileName);
+        mediaUrl = publicUrl;
+        mediaType = dropMedia.type;
       }
 
-      // Supabase Storage にアップロード
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('drops-media')
-        .upload(fileName, fileToUpload, { 
-          contentType: dropMedia.type,
-          upsert: true 
-        });
+      const pos = getPositionForDrop(myDropText, drops, true);
+      const color = `hsla(${Math.random() * 360}, 60%, 90%, 0.9)`;
+      const { data, error } = await supabase.from('drops').insert({
+        user_id: authUser.id, text: myDropText, color,
+        pos_x: pos.x, pos_y: pos.y, anim_type: Math.floor(Math.random() * 3) + 1,
+        media_url: mediaUrl, media_type: mediaType,
+      }).select('*, users(name, avatar_url, is_online, birth_date)').single();
 
-      if (uploadError) {
-        console.error('Upload error details:', uploadError);
-        alert(`メディアのアップロードに失敗しました (${uploadError.name}): ${uploadError.message}`);
-        return;
+      if (!error && data) {
+        const localDrop = toLocalDrop(data, authUser.id, userProfile);
+        setDrops(prev => prev.find(d => d.id === localDrop.id) ? prev : [...prev, localDrop]);
+        setMyDropCooldown(60);
+        const droppedText = myDropText;
+        setMyDropText('');
+        setDropMedia(null);
+        setCamera({ x: data.pos_x, y: data.pos_y });
+        // Drop待5秒後にBotから着信リクエスト
+        setTimeout(() => {
+          const bot = BOT_USERS[Math.floor(Math.random() * BOT_USERS.length)];
+          setIncomingRequest({
+            partner: { userName: bot.name, ageGroup: bot.ageGroup, avatar: bot.avatar, userId: bot.id },
+            dropText: droppedText, roomId: null, isBot: true,
+          });
+        }, 5000);
+      } else if (error) {
+        alert('投稿に失敗しました: ' + error.message);
       }
-
-      const { data: { publicUrl } } = supabase.storage.from('drops-media').getPublicUrl(fileName);
-      mediaUrl = publicUrl;
-      mediaType = dropMedia.type;
-    }
-
-    const pos = getPositionForDrop(myDropText, drops, true);
-    const color = `hsla(${Math.random() * 360}, 60%, 90%, 0.9)`;
-    const { data, error } = await supabase.from('drops').insert({
-      user_id: authUser.id, text: myDropText, color,
-      pos_x: pos.x, pos_y: pos.y, anim_type: Math.floor(Math.random() * 3) + 1,
-      media_url: mediaUrl, media_type: mediaType,
-    }).select('*, users(name, avatar_url, is_online, birth_date)').single();
-
-    if (!error && data) {
-      const localDrop = toLocalDrop(data, authUser.id, userProfile);
-      setDrops(prev => prev.find(d => d.id === localDrop.id) ? prev : [...prev, localDrop]);
-      setMyDropCooldown(60);
-      const droppedText = myDropText;
-      setMyDropText('');
-      setDropMedia(null);
-      setCamera({ x: data.pos_x, y: data.pos_y });
-      // Drop待5秒後にBotから着信リクエスト
-      setTimeout(() => {
-        const bot = BOT_USERS[Math.floor(Math.random() * BOT_USERS.length)];
-        setIncomingRequest({
-          partner: { userName: bot.name, ageGroup: bot.ageGroup, avatar: bot.avatar, userId: bot.id },
-          dropText: droppedText, roomId: null, isBot: true,
-        });
-      }, 5000);
-    } else if (error) {
-      alert('投稿に失敗しました: ' + error.message);
+    } finally {
+      setIsUploading(false);
     }
   };
 
