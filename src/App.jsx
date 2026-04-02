@@ -11,7 +11,7 @@ const NG_WORDS = ['バカ', '死ね', 'LINE', 'メアド', '@', '.com', 'http', 
 const INITIAL_ROOM_TIME = 300;
 const EXTEND_TIME = 300;
 const CANVAS_SIZE = 5000;
-const MAX_DROPS = 100;
+const MAX_DROPS = 250;
 // Drop寿命を 30分 に制限（ユーザーフィードバックによりウザさを解消）
 const DROP_LIFETIME = 30 * 60 * 1000;
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
@@ -49,21 +49,38 @@ const BOT_REPLIES = [
   'ありがとういってくれて','そういう夜あるよね','なんかほっとした',
   'もうちょっと聞かせて','なんかいい','うまく言えないけどわかる',
 ];
-const generateBotDrops = () => {
+const generateBotDrops = (countPerBot = 4) => {
   const colors = ['hsla(200,70%,90%,0.9)','hsla(280,60%,90%,0.9)','hsla(340,60%,92%,0.9)','hsla(150,50%,88%,0.9)','hsla(30,60%,90%,0.9)'];
+  const commonWords = ['暇', 'おなかすいた', 'ごはん', '音楽', '映画', '寝', '寂', '眠', '疲れ', '仕事', '学校', 'だるい', '最高', 'いいこと', '悩み', '空'];
+  const clusters = {};
+
   return BOT_USERS.flatMap((bot, bi) =>
-    Array.from({ length: 2 + (bi % 2) }, (_, i) => ({
-      id: `${bot.id}-drop-${i}`,
-      text: BOT_DROP_TEXTS[(bi * 3 + i) % BOT_DROP_TEXTS.length],
-      userId: bot.id, userName: bot.name, ageGroup: bot.ageGroup, avatar: bot.avatar,
-      color: colors[(bi + i) % colors.length],
-      x: Math.random() * CANVAS_SIZE,
-      y: Math.random() * CANVAS_SIZE,
-      animType: (bi + i) % 3 + 1, animDelay: -Math.random() * 5,
-      isMine: false, isOnline: false, isBot: true,
-      likes: 0, likedByMe: false, createdAt: Date.now() - Math.random() * 60000,
-      mediaUrl: null,
-    }))
+    Array.from({ length: countPerBot }, (_, i) => {
+      const text = BOT_DROP_TEXTS[Math.floor(Math.random() * BOT_DROP_TEXTS.length)];
+      const matchedIdx = commonWords.findIndex(w => text.includes(w));
+      let x, y;
+      
+      if (matchedIdx !== -1) {
+        if (!clusters[matchedIdx]) {
+          clusters[matchedIdx] = { x: Math.random() * (CANVAS_SIZE - 1000) + 500, y: Math.random() * (CANVAS_SIZE - 1000) + 500 };
+        }
+        x = (clusters[matchedIdx].x + (Math.random() * 200 - 100) + CANVAS_SIZE) % CANVAS_SIZE;
+        y = (clusters[matchedIdx].y + (Math.random() * 200 - 100) + CANVAS_SIZE) % CANVAS_SIZE;
+      } else {
+        x = Math.random() * CANVAS_SIZE;
+        y = Math.random() * CANVAS_SIZE;
+      }
+
+      return {
+        id: `bot-${bot.id}-${Date.now()}-${i}-${Math.random()}`,
+        text, userId: bot.id, userName: bot.name, ageGroup: bot.ageGroup, avatar: bot.avatar,
+        color: colors[(bi + i) % colors.length],
+        x, y, animType: Math.floor(Math.random() * 3) + 1, animDelay: -Math.random() * 5,
+        isMine: false, isOnline: Math.random() > 0.5, isBot: true,
+        likes: Math.floor(Math.random() * 3), likedByMe: false, createdAt: Date.now() - Math.random() * 60000,
+        mediaUrl: null,
+      };
+    })
   );
 };
 const compressImage = (file) => new Promise((resolve) => {
@@ -1225,31 +1242,6 @@ const App = () => {
     return () => supabase.removeChannel(channel);
   }, [screen, currentRoomId, authUser]);
 
-  const generateBotDrops = () => {
-    return BOT_USERS.map((bot, i) => {
-      const text = BOT_DROP_TEXTS[Math.floor(Math.random() * BOT_DROP_TEXTS.length)];
-      return {
-        id: `bot-${bot.id}-${Date.now()}-${i}`,
-        text,
-        userId: bot.id,
-        userName: bot.name,
-        ageGroup: bot.ageGroup,
-        avatar: bot.avatar,
-        color: `hsla(${Math.random() * 360}, 60%, 90%, 0.9)`,
-        // 画面全体に広く分散させる
-        x: Math.random() * CANVAS_SIZE,
-        y: Math.random() * CANVAS_SIZE,
-        animType: Math.floor(Math.random() * 3) + 1,
-        animDelay: -Math.random() * 5,
-        isMine: false,
-        isOnline: true,
-        likes: Math.floor(Math.random() * 5),
-        likedByMe: false,
-        createdAt: Date.now(),
-        isBot: true,
-      };
-    });
-  };
 
   // ─── Room タイマー ───
   useEffect(() => {
