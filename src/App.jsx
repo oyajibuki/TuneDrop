@@ -1874,7 +1874,7 @@ const App = () => {
   }
 
   return (
-    <div className="font-sans antialiased max-w-md mx-auto h-screen bg-sky-50 shadow-2xl overflow-hidden relative">
+    <div className="font-sans antialiased w-full h-screen bg-sky-50 overflow-hidden relative">
       {screen === 'login'   && <LoginScreen onGoogleLogin={handleGoogleLogin} onLineLogin={handleLineLogin} />}
       {screen === 'profile' && <ProfileScreen userProfile={userProfile} setUserProfile={setUserProfile} onSubmit={handleProfileSubmit} />}
       {screen === 'space'   && (
