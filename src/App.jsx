@@ -10,8 +10,8 @@ const NG_WORDS = ['バカ', '死ね', 'LINE', 'メアド', '@', '.com', 'http', 
 const INITIAL_ROOM_TIME = 300;
 const EXTEND_TIME = 300;
 const CANVAS_SIZE = 3000;
-// [POC_ONLY] Drop寿命を実質無制限。ユーザー100名前後になったら戻す
-const DROP_LIFETIME = 9999 * 24 * 60 * 60 * 1000;
+// Drop寿命を 30分 に制限（ユーザーフィードバックによりウザさを解消）
+const DROP_LIFETIME = 30 * 60 * 1000;
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
 
 const REDIRECT_URL = 'https://oyajibuki.github.io/TuneDrop/';
@@ -23,6 +23,9 @@ const BOT_USERS = [
   { id: 'bot-3', name: 'みお', ageGroup: '20代', avatar: 'https://i.pravatar.cc/150?u=bot-mio' },
   { id: 'bot-4', name: 'あお', ageGroup: '10代', avatar: 'https://i.pravatar.cc/150?u=bot-ao' },
   { id: 'bot-5', name: 'ゆう', ageGroup: '30代', avatar: 'https://i.pravatar.cc/150?u=bot-yuu' },
+  { id: 'bot-6', name: 'うみ', ageGroup: '20代', avatar: 'https://i.pravatar.cc/150?u=bot-umi' },
+  { id: 'bot-7', name: 'はな', ageGroup: '40代', avatar: 'https://i.pravatar.cc/150?u=bot-hana' },
+  { id: 'bot-8', name: 'かい', ageGroup: '30代', avatar: 'https://i.pravatar.cc/150?u=bot-kai' },
 ];
 const BOT_DROP_TEXTS = [
   '眠れない','Vaundy聴いてる','なんか虚無','コーヒー飲みたい','映画みたい','誰かと話したい',
@@ -326,37 +329,40 @@ const SpaceScreen = ({
     if (isWinding) return;
     setIsWinding(true);
     
-    // 同じキーワード（3文字以上）や同じユーザーをグループ化
-    const center = CANVAS_SIZE / 2;
     const groups = {};
-    
     const processedDrops = drops.map(d => {
-      let targetX = d.x, targetY = d.y;
+      let tx = Math.random() * CANVAS_SIZE;
+      let ty = Math.random() * CANVAS_SIZE;
+      
       const text = d.text.toLowerCase();
+      // キーワードを増やしてグルーピングの精度を上げる
+      const commonWords = [
+        '暇', 'おなかすいた', 'ごはん', '音楽', '映画', '寝', '寂', '眠', 
+        '疲れ', '仕事', '学校', 'だるい', '最高', 'いいこと', '悩み', '空'
+      ];
+      const matchedIdx = commonWords.findIndex(w => text.includes(w));
       
-      // ルール1: 同じ単語（3文字以上）を含むものをグループ化
-      const words = text.split(/[\s,，、。.]+ /).filter(w => w.length >= 3);
-      let matchedKey = null;
-      for(const w of words) {
-        if (groups[w]) { matchedKey = w; break; }
-      }
-      
-      if (matchedKey) {
-        targetX = (groups[matchedKey].x + (Math.random() * 200 - 100) + CANVAS_SIZE) % CANVAS_SIZE;
-        targetY = (groups[matchedKey].y + (Math.random() * 200 - 100) + CANVAS_SIZE) % CANVAS_SIZE;
-      } else if (words.length > 0) {
-        groups[words[0]] = { x: (center + (Math.random() * 1000 - 500) + CANVAS_SIZE) % CANVAS_SIZE, y: (center + (Math.random() * 1000 - 500) + CANVAS_SIZE) % CANVAS_SIZE };
-        targetX = groups[words[0]].x; targetY = groups[words[0]].y;
+      if (matchedIdx !== -1) {
+        if (!groups[matchedIdx]) {
+          groups[matchedIdx] = { x: Math.random() * (CANVAS_SIZE-800) + 400, y: Math.random() * (CANVAS_SIZE-800) + 400 };
+        }
+        // グループ内では 150px 範囲に寄せ、密着感を出す
+        tx = (groups[matchedIdx].x + (Math.random() * 150 - 75) + CANVAS_SIZE) % CANVAS_SIZE;
+        ty = (groups[matchedIdx].y + (Math.random() * 150 - 75) + CANVAS_SIZE) % CANVAS_SIZE;
+      } else {
+        // グループ外は CANVAS_SIZE 全体に広く散らす
+        tx = Math.random() * CANVAS_SIZE;
+        ty = Math.random() * CANVAS_SIZE;
       }
 
-      return { ...d, x: targetX, y: targetY, isPopping: true };
+      return { ...d, x: tx, y: ty, isPopping: true };
     });
 
     setDrops(processedDrops);
     setTimeout(() => {
       setDrops(prev => prev.map(d => ({ ...d, isPopping: false })));
       setIsWinding(false);
-    }, 1000);
+    }, 1500); // 演出時間を少し長めに
   };
 
   const stopPropagation = (e) => e.stopPropagation();
@@ -496,6 +502,26 @@ const SpaceScreen = ({
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* 投稿前のメディアプレビュー */}
+      {dropMedia && (
+        <div className="absolute left-1/2 transform -translate-x-1/2 bottom-[calc(7rem + env(safe-area-inset-bottom))] w-[90%] max-w-md bg-white/90 backdrop-blur-md rounded-2xl p-2 shadow-xl border border-white z-50 animate-in fade-in slide-in-from-bottom-4">
+          <button 
+            type="button" 
+            onClick={() => setDropMedia(null)}
+            className="absolute -top-2 -right-2 bg-rose-500 text-white rounded-full p-1 shadow-lg hover:bg-rose-600 z-10"
+          >
+            <X size={16} />
+          </button>
+          <div className="rounded-xl overflow-hidden aspect-video bg-slate-100 flex items-center justify-center">
+            {dropMedia.type.startsWith('video') ? (
+              <video src={dropMedia.preview} className="w-full h-full object-contain" muted playsInline />
+            ) : (
+              <img src={dropMedia.preview} className="w-full h-full object-contain" alt="preview" />
+            )}
+          </div>
         </div>
       )}
 
@@ -1085,10 +1111,19 @@ const App = () => {
       .subscribe();
 
     const timer = setInterval(() => { setNow(Date.now()); }, 5000);
+    
+    // 30分おきにボットドロップを再生成（古いものを置換）
+    const botTimer = setInterval(() => {
+      setDrops(prev => {
+        const realDrops = prev.filter(d => !d.id.toString().startsWith('bot-'));
+        return [...realDrops, ...generateBotDrops()];
+      });
+    }, 30 * 60 * 1000);
 
     return () => {
       supabase.removeChannel(channel);
       clearInterval(timer);
+      clearInterval(botTimer);
     };
   }, [screen, authUser]);
 
@@ -1182,6 +1217,32 @@ const App = () => {
 
     return () => supabase.removeChannel(channel);
   }, [screen, currentRoomId, authUser]);
+
+  const generateBotDrops = () => {
+    return BOT_USERS.map((bot, i) => {
+      const text = BOT_DROP_TEXTS[Math.floor(Math.random() * BOT_DROP_TEXTS.length)];
+      return {
+        id: `bot-${bot.id}-${Date.now()}-${i}`,
+        text,
+        userId: bot.id,
+        userName: bot.name,
+        ageGroup: bot.ageGroup,
+        avatar: bot.avatar,
+        color: `hsla(${Math.random() * 360}, 60%, 90%, 0.9)`,
+        // 画面全体に広く分散させる
+        x: Math.random() * CANVAS_SIZE,
+        y: Math.random() * CANVAS_SIZE,
+        animType: Math.floor(Math.random() * 3) + 1,
+        animDelay: -Math.random() * 5,
+        isMine: false,
+        isOnline: true,
+        likes: Math.floor(Math.random() * 5),
+        likedByMe: false,
+        createdAt: Date.now(),
+        isBot: true,
+      };
+    });
+  };
 
   // ─── Room タイマー ───
   useEffect(() => {
