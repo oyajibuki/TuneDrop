@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Camera, MessageCircle, Settings, X, Heart, Flag, Ban, MoreVertical, 
   Send, Clock, LogOut, CheckCircle, Trash2, Edit2, LogIn, Wind,
+  DoorOpen, AlertCircle
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
@@ -9,7 +10,8 @@ import { supabase } from './lib/supabase';
 const NG_WORDS = ['バカ', '死ね', 'LINE', 'メアド', '@', '.com', 'http', 'sex'];
 const INITIAL_ROOM_TIME = 300;
 const EXTEND_TIME = 300;
-const CANVAS_SIZE = 3000;
+const CANVAS_SIZE = 5000;
+const MAX_DROPS = 100;
 // Drop寿命を 30分 に制限（ユーザーフィードバックによりウザさを解消）
 const DROP_LIFETIME = 30 * 60 * 1000;
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
@@ -55,8 +57,8 @@ const generateBotDrops = () => {
       text: BOT_DROP_TEXTS[(bi * 3 + i) % BOT_DROP_TEXTS.length],
       userId: bot.id, userName: bot.name, ageGroup: bot.ageGroup, avatar: bot.avatar,
       color: colors[(bi + i) % colors.length],
-      x: (CANVAS_SIZE / 2 + (Math.random() * 1600 - 800) + CANVAS_SIZE) % CANVAS_SIZE,
-      y: (CANVAS_SIZE / 2 + (Math.random() * 1600 - 800) + CANVAS_SIZE) % CANVAS_SIZE,
+      x: Math.random() * CANVAS_SIZE,
+      y: Math.random() * CANVAS_SIZE,
       animType: (bi + i) % 3 + 1, animDelay: -Math.random() * 5,
       isMine: false, isOnline: false, isBot: true,
       likes: 0, likedByMe: false, createdAt: Date.now() - Math.random() * 60000,
@@ -414,7 +416,7 @@ const SpaceScreen = ({
                 key={drop.id}
                 onPointerDown={(e) => onDropPointerDown(e, drop)}
                 className="absolute flex flex-col items-center justify-center cursor-pointer group"
-                style={{ left: `${cx + dx}px`, top: `${cy + dy}px`, opacity, animation: isBeingDragged ? 'none' : `float${drop.animType} ${4 + drop.animType}s ease-in-out infinite`, animationDelay: isBeingDragged ? '0s' : `${drop.animDelay}s`, zIndex: isBeingDragged ? 50 : 10 }}
+                style={{ left: `${cx + dx}px`, top: `${cy + dy}px`, transition: drop.isPopping ? 'left 1.5s ease-out, top 1.5s ease-out' : 'none', opacity, animation: isBeingDragged ? 'none' : `float${drop.animType} ${4 + drop.animType}s ease-in-out infinite`, animationDelay: isBeingDragged ? '0s' : `${drop.animDelay}s`, zIndex: isBeingDragged ? 50 : 10 }}
               >
                 <div
                   className={`flex items-center gap-3 p-2 pr-6 rounded-full bg-white/40 backdrop-blur-md transition-all duration-300 ease-out group-hover:bg-white/60 ${isBeingDragged ? 'ring-2 ring-white/50 scale-105' : ''}`}
@@ -425,7 +427,7 @@ const SpaceScreen = ({
                     <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${drop.isOnline ? 'bg-green-500' : 'bg-slate-400'}`}></span>
                   </div>
                   <span className="text-base font-bold whitespace-nowrap text-slate-700 drop-shadow-sm pointer-events-none flex items-center gap-1.5">
-                    {drop.text}
+                    {drop.text.length > 12 ? drop.text.slice(0, 12) + '...' : drop.text}
                     {drop.mediaUrl && (
                       <div className="p-1 bg-sky-100 rounded-lg text-sky-500">
                         <Camera size={14} />
@@ -1110,7 +1112,12 @@ const App = () => {
       })
       .subscribe();
 
-    const timer = setInterval(() => { setNow(Date.now()); }, 5000);
+    const timer = setInterval(() => { 
+      setNow(Date.now()); 
+      setDrops(prev => prev.length > MAX_DROPS 
+        ? [...prev].sort((a, b) => b.createdAt - a.createdAt).slice(0, MAX_DROPS) 
+        : prev);
+    }, 5000);
     
     // 30分おきにボットドロップを再生成（古いものを置換）
     const botTimer = setInterval(() => {
@@ -1269,8 +1276,7 @@ const App = () => {
     const similar = currentDrops.find(d => d.text === text || d.text.includes(text) || text.includes(d.text));
     if (similar) return { x: (similar.x + (Math.random() * 300 - 150) + CANVAS_SIZE) % CANVAS_SIZE, y: (similar.y + (Math.random() * 300 - 150) + CANVAS_SIZE) % CANVAS_SIZE };
     if (isMine) return { x: (camera.x + (Math.random() * 100 - 50) + CANVAS_SIZE) % CANVAS_SIZE, y: (camera.y + (Math.random() * 100 - 50) + CANVAS_SIZE) % CANVAS_SIZE };
-    const c = CANVAS_SIZE / 2;
-    return { x: (c + (Math.random() * 800 - 400) + CANVAS_SIZE) % CANVAS_SIZE, y: (c + (Math.random() * 800 - 400) + CANVAS_SIZE) % CANVAS_SIZE };
+    return { x: Math.random() * CANVAS_SIZE, y: Math.random() * CANVAS_SIZE };
   };
 
   const handleMyDrop = async (e) => {
