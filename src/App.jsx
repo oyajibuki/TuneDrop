@@ -11,7 +11,7 @@ const NG_WORDS = ['バカ', '死ね', 'LINE', 'メアド', '@', '.com', 'http', 
 const INITIAL_ROOM_TIME = 300;
 const EXTEND_TIME = 300;
 const CANVAS_SIZE = 5000;
-const MAX_DROPS = 250;
+const MAX_DROPS = 500;
 // Drop寿命を 30分 に制限（ユーザーフィードバックによりウザさを解消）
 const DROP_LIFETIME = 30 * 60 * 1000;
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
@@ -49,7 +49,7 @@ const BOT_REPLIES = [
   'ありがとういってくれて','そういう夜あるよね','なんかほっとした',
   'もうちょっと聞かせて','なんかいい','うまく言えないけどわかる',
 ];
-const generateBotDrops = (countPerBot = 4) => {
+const generateBotDrops = (countPerBot = 8) => {
   const colors = ['hsla(200,70%,90%,0.9)','hsla(280,60%,90%,0.9)','hsla(340,60%,92%,0.9)','hsla(150,50%,88%,0.9)','hsla(30,60%,90%,0.9)'];
   const commonWords = ['暇', 'おなかすいた', 'ごはん', '音楽', '映画', '寝', '寂', '眠', '疲れ', '仕事', '学校', 'だるい', '最高', 'いいこと', '悩み', '空'];
   const clusters = {};
@@ -491,7 +491,7 @@ const SpaceScreen = ({
           
           {selectedDrop.mediaUrl && (
              <div className="w-full max-h-60 rounded-2xl overflow-hidden mb-6 bg-slate-100 flex items-center justify-center">
-               {selectedDrop.mediaUrl.match(/\.(mp4|mov|webm)$|video/i) ? (
+               {selectedDrop.mediaType && selectedDrop.mediaType.startsWith('video') ? (
                  <video src={selectedDrop.mediaUrl} controls className="w-full h-full object-contain" />
                ) : (
                  <img src={selectedDrop.mediaUrl} alt="drop-media" className="w-full h-full object-contain" />
@@ -1135,6 +1135,48 @@ const App = () => {
         ? [...prev].sort((a, b) => b.createdAt - a.createdAt).slice(0, MAX_DROPS) 
         : prev);
     }, 5000);
+
+    const physicsTimer = setInterval(() => {
+      setDrops(prev => {
+        let moved = false;
+        const newDrops = prev.map(d => ({ ...d }));
+        for (let i = 0; i < newDrops.length; i++) {
+          for (let j = i + 1; j < newDrops.length; j++) {
+            const di = newDrops[i];
+            const dj = newDrops[j];
+            
+            let dx = dj.x - di.x;
+            if (dx > CANVAS_SIZE / 2) dx -= CANVAS_SIZE;
+            if (dx < -CANVAS_SIZE / 2) dx += CANVAS_SIZE;
+            
+            let dy = dj.y - di.y;
+            if (dy > CANVAS_SIZE / 2) dy -= CANVAS_SIZE;
+            if (dy < -CANVAS_SIZE / 2) dy += CANVAS_SIZE;
+
+            const dist2 = dx*dx + dy*dy;
+            const RADIUS = 180; // 約180px以内に近づいたら反発
+            
+            if (dist2 > 0 && dist2 < RADIUS * RADIUS) {
+              const dist = Math.sqrt(dist2);
+              const overlap = RADIUS - dist;
+              const pushX = (dx / dist) * (overlap * 0.5);
+              const pushY = (dy / dist) * (overlap * 0.5);
+              
+              di.x = (di.x - pushX + CANVAS_SIZE) % CANVAS_SIZE;
+              di.y = (di.y - pushY + CANVAS_SIZE) % CANVAS_SIZE;
+              dj.x = (dj.x + pushX + CANVAS_SIZE) % CANVAS_SIZE;
+              dj.y = (dj.y + pushY + CANVAS_SIZE) % CANVAS_SIZE;
+              
+              di.isPopping = true; 
+              dj.isPopping = true;
+              moved = true;
+            }
+          }
+        }
+        return moved ? newDrops : prev;
+      });
+      setTimeout(() => setDrops(prev => prev.map(d => d.isPopping ? { ...d, isPopping: false } : d)), 600);
+    }, 1500);
     
     // 30分おきにボットドロップを再生成（古いものを置換）
     const botTimer = setInterval(() => {
@@ -1147,6 +1189,7 @@ const App = () => {
     return () => {
       supabase.removeChannel(channel);
       clearInterval(timer);
+      clearInterval(physicsTimer);
       clearInterval(botTimer);
     };
   }, [screen, authUser]);
