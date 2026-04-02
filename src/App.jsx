@@ -240,6 +240,7 @@ const SpaceScreen = ({
   const [isWinding, setIsWinding] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingDropId, setDraggingDropId] = useState(null);
+  const [editingMedia, setEditingMedia] = useState(null);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const initialDistRef = useRef(null);
   const clickStartRef = useRef({ x: 0, y: 0 });
@@ -395,7 +396,7 @@ const SpaceScreen = ({
         @keyframes flash  { 0%{opacity:0.6} 100%{opacity:0} }
       `}</style>
 
-      <button onClick={() => setIsSettingsOpen(true)} className="absolute right-6 z-[100] p-3 bg-white/40 backdrop-blur-md border border-white/60 rounded-full text-slate-700 hover:bg-white/60 transition shadow-sm"
+      <button onClick={() => setIsSettingsOpen(true)} className="fixed right-6 z-[100] p-3 bg-white/40 backdrop-blur-md border border-white/60 rounded-full text-slate-700 hover:bg-white/60 transition shadow-sm"
         style={{ top: 'calc(1.5rem + env(safe-area-inset-top))' }}>
         <Settings size={22} />
       </button>
@@ -525,26 +526,44 @@ const SpaceScreen = ({
       )}
 
       {/* 投稿前のメディアプレビュー */}
+      {/* 投稿前のメディア専用モーダル (Post Modal) */}
       {dropMedia && (
-        <div className="absolute left-1/2 transform -translate-x-1/2 bottom-[calc(7rem + env(safe-area-inset-bottom))] w-[90%] max-w-md bg-white/90 backdrop-blur-md rounded-2xl p-2 shadow-xl border border-white z-50 animate-in fade-in slide-in-from-bottom-4">
-          <button 
-            type="button" 
-            onClick={() => setDropMedia(null)}
-            className="absolute -top-2 -right-2 bg-rose-500 text-white rounded-full p-1 shadow-lg hover:bg-rose-600 z-10"
-          >
-            <X size={16} />
-          </button>
-          <div className="rounded-xl overflow-hidden aspect-video bg-slate-100 flex items-center justify-center">
-            {dropMedia.type.startsWith('video') ? (
-              <video src={dropMedia.preview} className="w-full h-full object-contain" muted playsInline />
-            ) : (
-              <img src={dropMedia.preview} className="w-full h-full object-contain" alt="preview" />
-            )}
+        <div className="absolute inset-0 z-[200] bg-black/80 flex flex-col items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl flex flex-col">
+            <div className="relative aspect-square bg-slate-100 flex items-center justify-center text-slate-400">
+              <button 
+                type="button" 
+                onClick={() => setDropMedia(null)}
+                className="absolute top-3 right-3 bg-black/40 text-white rounded-full p-2 hover:bg-black/60 z-10 transition shadow-md"
+              >
+                <X size={20} />
+              </button>
+              {dropMedia.type.startsWith('video') ? (
+                <video src={dropMedia.preview} className="w-full h-full object-cover" controls playsInline />
+              ) : (
+                <img src={dropMedia.preview} className="w-full h-full object-cover" alt="preview" />
+              )}
+            </div>
+            
+            <form onSubmit={handleMyDrop} className="p-4 bg-white flex flex-col gap-3">
+              <textarea
+                value={myDropText}
+                onChange={(e) => setMyDropText(e.target.value)}
+                placeholder="メッセージを入力 (最大30文字)"
+                className="w-full bg-slate-50 border-none rounded-xl p-3 text-slate-800 resize-none focus:outline-none focus:ring-2 focus:ring-sky-400"
+                maxLength={30}
+                rows={2}
+              />
+              <button type="submit" disabled={myDropCooldown > 0} className="w-full py-3.5 bg-sky-500 text-white rounded-xl font-bold hover:bg-sky-600 transition flex justify-center items-center gap-2 disabled:opacity-50">
+                <Send size={18} /> Dropする
+              </button>
+            </form>
           </div>
         </div>
       )}
 
       {/* Drop Input */}
+      {(!dropMedia && !editingMedia) && (
       <div
         className="absolute left-1/2 transform -translate-x-1/2 w-[90%] max-w-md z-40"
         style={{ bottom: 'calc(2rem + env(safe-area-inset-bottom))' }}
@@ -574,10 +593,15 @@ const SpaceScreen = ({
               onChange={(e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-                if (file.type.startsWith('video') && file.size > MAX_VIDEO_SIZE) {
-                  alert('動画は50MB以内にしてください。'); return;
+                if (file.type.startsWith('image/')) {
+                  setEditingMedia(file);
+                } else {
+                  if (file.size > MAX_VIDEO_SIZE) {
+                    alert('動画は50MB以内にしてください。'); return;
+                  }
+                  setDropMedia({ file, type: file.type, preview: URL.createObjectURL(file) });
                 }
-                setDropMedia({ file, type: file.type, preview: URL.createObjectURL(file) });
+                e.target.value = '';
               }}
             />
             <button
@@ -593,11 +617,24 @@ const SpaceScreen = ({
           </form>
         </div>
       </div>
+      )}
+
+      {editingMedia && (
+        <MediaCropModal 
+          imageFile={editingMedia}
+          onConfirm={(blob) => {
+            setDropMedia({ file: blob, type: 'image/jpeg', preview: URL.createObjectURL(blob) });
+            setEditingMedia(null);
+          }}
+          onCancel={() => setEditingMedia(null)}
+        />
+      )}
     </div>
   );
 };
 
 // --- RoomScreen ---
+
 const RoomScreen = ({ roomTime, chatPartner, messages, chatInput, setChatInput, handleSendMessage, errorMessage, handleNext, handleExtend, extendRequested, handleReport, handleBlockAndExit }) => {
   const [showRoomMenu, setShowRoomMenu] = useState(false);
   const bottomRef = useRef(null);
@@ -617,7 +654,7 @@ const RoomScreen = ({ roomTime, chatPartner, messages, chatInput, setChatInput, 
           <div className={`flex items-center gap-1.5 font-mono text-xl font-bold ${roomTime <= 10 ? 'text-rose-500 animate-pulse' : 'text-sky-500'}`}>
             <Clock size={20} />{formatTime(roomTime)}
           </div>
-          <button onClick={handleNext} className="text-sm px-3 py-2 bg-slate-200 text-slate-700 hover:bg-slate-300 rounded-full transition font-bold ml-2">Next</button>
+
           <button onClick={handleNext} className="text-sm px-3 py-2 bg-rose-100 text-rose-600 hover:bg-rose-200 rounded-full transition font-bold flex items-center gap-1">
             <DoorOpen size={15} />退席
           </button>
@@ -948,6 +985,237 @@ const AvatarCropModal = ({ imageFile, onConfirm, onCancel }) => {
   );
 };
 
+
+// --- メディアクロップモーダル ---
+const MEDIA_CROP_SIZE = 300;
+
+const MediaCropModal = ({ imageFile, onConfirm, onCancel }) => {
+  const imgRef = React.useRef(null);
+  const canvasRef = React.useRef(null);
+  const rafRef = React.useRef(null);
+  const offsetRef = React.useRef({ x: 0, y: 0 });
+  const scaleRef = React.useRef(1);
+  const rotationRef = React.useRef(0);
+  const [imgSrc, setImgSrc] = React.useState(null);
+  const [loaded, setLoaded] = React.useState(false);
+  const lastTouchRef = React.useRef(null);
+  const lastPinchRef = React.useRef(null);
+  const isDraggingRef = React.useRef(false);
+  const lastMouseRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const reader = new FileReader();
+    reader.onload = e => setImgSrc(e.target.result);
+    reader.readAsDataURL(imageFile);
+  }, [imageFile]);
+
+  const getBaseScale = () => {
+    const img = imgRef.current;
+    if (!img?.naturalWidth) return 1;
+    return Math.max(MEDIA_CROP_SIZE / img.naturalWidth, MEDIA_CROP_SIZE / img.naturalHeight);
+  };
+
+  const getDims = () => {
+    const img = imgRef.current;
+    if (!img?.naturalWidth) return { dw: MEDIA_CROP_SIZE, dh: MEDIA_CROP_SIZE };
+    const bs = getBaseScale();
+    return { dw: img.naturalWidth * bs * scaleRef.current, dh: img.naturalHeight * bs * scaleRef.current };
+  };
+
+  const clamp = () => {
+    const img = imgRef.current;
+    if (!img?.naturalWidth) return;
+    const { dw, dh } = getDims();
+    const isRot = (rotationRef.current / 90) % 2 !== 0;
+    const mx = Math.max(0, ((isRot ? dh : dw) - MEDIA_CROP_SIZE) / 2);
+    const my = Math.max(0, ((isRot ? dw : dh) - MEDIA_CROP_SIZE) / 2);
+    offsetRef.current.x = Math.max(-mx, Math.min(mx, offsetRef.current.x));
+    offsetRef.current.y = Math.max(-my, Math.min(my, offsetRef.current.y));
+  };
+
+  const draw = () => {
+    const canvas = canvasRef.current;
+    const img = imgRef.current;
+    if (!canvas || !img?.naturalWidth) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, MEDIA_CROP_SIZE, MEDIA_CROP_SIZE);
+    const { dw, dh } = getDims();
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, MEDIA_CROP_SIZE, MEDIA_CROP_SIZE);
+    ctx.clip();
+    ctx.translate(MEDIA_CROP_SIZE / 2 + offsetRef.current.x, MEDIA_CROP_SIZE / 2 + offsetRef.current.y);
+    ctx.rotate(rotationRef.current * Math.PI / 180);
+    ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+    ctx.restore();
+  };
+
+  const scheduleDraw = () => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(draw);
+  };
+
+  React.useEffect(() => { if (loaded) scheduleDraw(); }, [loaded]);
+
+  React.useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+
+    const onTouchStart = (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1) {
+        lastTouchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        lastPinchRef.current = null;
+      } else if (e.touches.length === 2) {
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
+        lastPinchRef.current = {
+          dist: Math.hypot(dx, dy),
+          midX: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+          midY: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+        };
+        lastTouchRef.current = null;
+      }
+    };
+
+    const onTouchMove = (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1 && lastTouchRef.current) {
+        offsetRef.current.x += e.touches[0].clientX - lastTouchRef.current.x;
+        offsetRef.current.y += e.touches[0].clientY - lastTouchRef.current.y;
+        clamp();
+        lastTouchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        scheduleDraw();
+      } else if (e.touches.length === 2 && lastPinchRef.current) {
+        const t0 = e.touches[0], t1 = e.touches[1];
+        const newDist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+        const newMidClientX = (t0.clientX + t1.clientX) / 2;
+        const newMidClientY = (t0.clientY + t1.clientY) / 2;
+        const rect = el.getBoundingClientRect();
+
+        offsetRef.current.x += newMidClientX - lastPinchRef.current.midX;
+        offsetRef.current.y += newMidClientY - lastPinchRef.current.midY;
+
+        const midX = newMidClientX - rect.left;
+        const midY = newMidClientY - rect.top;
+        const newScale = Math.max(1, Math.min(5, scaleRef.current * (newDist / lastPinchRef.current.dist)));
+        const sr = newScale / scaleRef.current;
+        offsetRef.current.x = (midX - MEDIA_CROP_SIZE / 2) * (1 - sr) + offsetRef.current.x * sr;
+        offsetRef.current.y = (midY - MEDIA_CROP_SIZE / 2) * (1 - sr) + offsetRef.current.y * sr;
+        scaleRef.current = newScale;
+
+        clamp();
+        lastPinchRef.current = { dist: newDist, midX: newMidClientX, midY: newMidClientY };
+        scheduleDraw();
+      }
+    };
+
+    const onTouchEnd = (e) => {
+      if (e.touches.length < 2) lastPinchRef.current = null;
+      if (e.touches.length < 1) lastTouchRef.current = null;
+    };
+
+    const onWheel = (e) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const midX = e.clientX - rect.left;
+      const midY = e.clientY - rect.top;
+      const newScale = Math.max(1, Math.min(5, scaleRef.current * (e.deltaY > 0 ? 0.9 : 1.1)));
+      const sr = newScale / scaleRef.current;
+      offsetRef.current.x = (midX - MEDIA_CROP_SIZE / 2) * (1 - sr) + offsetRef.current.x * sr;
+      offsetRef.current.y = (midY - MEDIA_CROP_SIZE / 2) * (1 - sr) + offsetRef.current.y * sr;
+      scaleRef.current = newScale;
+      clamp();
+      scheduleDraw();
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: false });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: false });
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('wheel', onWheel);
+    };
+  }, []);
+
+  const handleMouseDown = (e) => { isDraggingRef.current = true; lastMouseRef.current = { x: e.clientX, y: e.clientY }; };
+  const handleMouseMove = (e) => {
+    if (!isDraggingRef.current) return;
+    offsetRef.current.x += e.clientX - lastMouseRef.current.x;
+    offsetRef.current.y += e.clientY - lastMouseRef.current.y;
+    clamp();
+    lastMouseRef.current = { x: e.clientX, y: e.clientY };
+    scheduleDraw();
+  };
+  const handleMouseUp = () => { isDraggingRef.current = false; };
+
+  const handleRotate = (dir) => {
+    rotationRef.current = ((rotationRef.current + dir * 90) + 360) % 360;
+    scaleRef.current = 1;
+    offsetRef.current = { x: 0, y: 0 };
+    scheduleDraw();
+  };
+
+  const handleConfirm = () => {
+    const img = imgRef.current;
+    if (!img || !loaded) return;
+    const { dw, dh } = getDims();
+    const OUTPUT = 600; // Better quality for dropped images
+    const canvas = document.createElement('canvas');
+    canvas.width = OUTPUT; canvas.height = OUTPUT;
+    const ctx = canvas.getContext('2d');
+    const r = OUTPUT / MEDIA_CROP_SIZE;
+    ctx.beginPath();
+    ctx.rect(0, 0, OUTPUT, OUTPUT);
+    ctx.clip();
+    ctx.translate((MEDIA_CROP_SIZE / 2 + offsetRef.current.x) * r, (MEDIA_CROP_SIZE / 2 + offsetRef.current.y) * r);
+    ctx.rotate(rotationRef.current * Math.PI / 180);
+    ctx.drawImage(img, -dw / 2 * r, -dh / 2 * r, dw * r, dh * r);
+    canvas.toBlob(blob => onConfirm(blob), 'image/jpeg', 0.85);
+  };
+
+  return (
+    <div className="absolute inset-0 z-[300] bg-black/80 flex flex-col items-center justify-center p-4">
+      <div className="bg-white rounded-3xl p-6 w-full max-w-sm">
+        <h3 className="text-center font-bold text-slate-800 mb-4 text-lg">画像を編集</h3>
+
+        {imgSrc && <img ref={imgRef} src={imgSrc} onLoad={() => setLoaded(true)} style={{ display: 'none' }} alt="" />}
+
+        <div style={{ display: 'flex', justifyContent: 'center', position: 'relative' }}>
+          <canvas
+            ref={canvasRef}
+            width={MEDIA_CROP_SIZE}
+            height={MEDIA_CROP_SIZE}
+            style={{ width: MEDIA_CROP_SIZE, height: MEDIA_CROP_SIZE, borderRadius: '16px', border: '4px solid #38bdf8', display: 'block', cursor: 'grab', touchAction: 'none', flexShrink: 0 }}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+          />
+          {!loaded && (
+            <div style={{ position: 'absolute', width: MEDIA_CROP_SIZE, height: MEDIA_CROP_SIZE, borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 14, background: 'rgba(255,255,255,0.8)' }}>
+              読み込み中…
+            </div>
+          )}
+        </div>
+
+        <p className="text-center text-xs text-slate-400 mt-2 border-t pt-2 border-slate-100">ドラッグで移動・ピンチで拡大縮小</p>
+        <div className="flex justify-center gap-4 mt-3 mb-4">
+          <button type="button" onClick={() => handleRotate(-1)} className="px-5 py-2 bg-slate-100 rounded-xl text-slate-600 hover:bg-slate-200 transition text-sm font-medium">↺ 左90°</button>
+          <button type="button" onClick={() => handleRotate(1)} className="px-5 py-2 bg-slate-100 rounded-xl text-slate-600 hover:bg-slate-200 transition text-sm font-medium">右90° ↻</button>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-2xl font-bold hover:bg-slate-200 transition">キャンセル</button>
+          <button onClick={handleConfirm} disabled={!loaded} className="flex-1 py-3 bg-sky-500 text-white rounded-2xl font-bold hover:bg-sky-600 transition disabled:opacity-50">決定</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- メインアプリ ---
 const App = () => {
   const [screen, setScreen] = useState('loading');
@@ -1154,7 +1422,7 @@ const App = () => {
             if (dy < -CANVAS_SIZE / 2) dy += CANVAS_SIZE;
 
             const dist2 = dx*dx + dy*dy;
-            const RADIUS = 180; // 約180px以内に近づいたら反発
+            const RADIUS = 280; // テキスト同士の重なりを防ぐため広めの半径を指定
             
             if (dist2 > 0 && dist2 < RADIUS * RADIUS) {
               const dist = Math.sqrt(dist2);
