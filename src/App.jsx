@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Camera, MessageCircle, Settings, X, Heart, Flag, Ban, MoreVertical, 
   Send, Clock, LogOut, CheckCircle, Trash2, Edit2, LogIn, Wind,
-  DoorOpen, AlertCircle
+  DoorOpen, AlertCircle, Star
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
@@ -72,7 +72,7 @@ const generateBotDrops = (countPerBot = 8) => {
       }
 
       return {
-        id: `bot-${bot.id}-${Date.now()}-${i}-${Math.random()}`,
+        id: `bot-${bot.id}-${i}`,
         text, userId: bot.id, userName: bot.name, ageGroup: bot.ageGroup, avatar: bot.avatar,
         color: colors[(bi + i) % colors.length],
         x, y, animType: Math.floor(Math.random() * 3) + 1, animDelay: -Math.random() * 5,
@@ -84,7 +84,7 @@ const generateBotDrops = (countPerBot = 8) => {
   );
 
   botDrops.push({
-    id: `ad-oshipay-${Date.now()}`,
+    id: `ad-oshipay`,
     text: "OshiPay\nその感動、今すぐカタチに。",
     link: "https://oshipay.me/",
     userId: "ad-oshipay",
@@ -95,7 +95,7 @@ const generateBotDrops = (countPerBot = 8) => {
     x: Math.random() * CANVAS_SIZE,
     y: Math.random() * CANVAS_SIZE,
     animType: 1, animDelay: 0,
-    isMine: false, isOnline: true, isBot: true,
+    isMine: false, isOnline: true, isBot: true, isAd: true,
     likes: 99, likedByMe: false, createdAt: Date.now(),
     mediaUrl: null,
   });
@@ -435,11 +435,15 @@ const SpaceScreen = ({
             const age = now - drop.createdAt;
             const lifeRatio = Math.max(0, 1 - age / DROP_LIFETIME);
             const opacity = lifeRatio > 0.05 ? 1 : lifeRatio * 20;
-            const likes = drop.likes || 0;
-            const dropScale = drop.isPopping ? 1.2 : 1;
-            const glowShadow = likes > 0 ? `0 0 ${15 + likes * 10}px ${drop.color}, inset 0 0 10px rgba(255,255,255,0.8)` : `0 8px 32px rgba(255,255,255,0.4)`;
-            const borderColor = likes > 0 ? drop.color : 'rgba(255,255,255,0.7)';
             const isBeingDragged = draggingDropId === drop.id;
+            const glowShadow = drop.isAd 
+              ? `0 0 30px hsla(45, 100%, 50%, 0.6), 0 0 10px hsla(45, 100%, 70%, 0.4)`
+              : drop.likes > 0 
+                ? `0 0 ${15 + drop.likes * 10}px ${drop.color}, inset 0 0 10px rgba(255,255,255,0.8)` 
+                : `0 8px 32px rgba(255,255,255,0.4)`;
+            const borderColor = drop.isAd ? '#fbbf24' : drop.likes > 0 ? drop.color : 'rgba(255,255,255,0.7)';
+            const dropScale = drop.isAd ? 1.15 : (drop.isPopping ? 1.2 : 1);
+            
             let dx = (drop.x - camera.x) % CANVAS_SIZE;
             if (dx > CANVAS_SIZE / 2) dx -= CANVAS_SIZE;
             if (dx < -CANVAS_SIZE / 2) dx += CANVAS_SIZE;
@@ -471,13 +475,18 @@ const SpaceScreen = ({
                       </div>
                     )}
                   </span>
-                  {likes > 0 && (
+                  {drop.likes > 0 && (
                     <span className="flex items-center gap-1 text-pink-500 text-sm font-bold ml-1 pointer-events-none">
-                      <Heart size={14} fill="currentColor" /> {likes}
+                      <Heart size={14} fill="currentColor" /> {drop.likes}
                     </span>
                   )}
                 </div>
                 {drop.isMine && <span className="absolute -top-4 -right-2 bg-sky-500 text-white text-[10px] px-2 py-0.5 rounded-full shadow-sm z-10 pointer-events-none">Me</span>}
+                {drop.isAd && (
+                  <span className="absolute -top-4 -left-2 bg-amber-400 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm z-10 border border-amber-200 pointer-events-none flex items-center gap-0.5">
+                    <Star size={8} fill="currentColor" /> PR
+                  </span>
+                )}
               </div>
             );
           })}
@@ -524,27 +533,29 @@ const SpaceScreen = ({
              </div>
           )}
 
-          {selectedDrop.isMine ? (
-            <button onClick={() => handleDeleteDrop(selectedDrop.id)} className="w-full py-3.5 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center gap-2 hover:bg-rose-100 transition font-bold shadow-sm">
-              Dropを取り消す
-            </button>
-          ) : (
-            <div className="flex w-full gap-3">
-              <button
-                onClick={() => handleLike(selectedDrop.id)}
-                disabled={selectedDrop.likedByMe}
-                className={`flex-1 py-3.5 rounded-2xl flex items-center justify-center gap-2 transition font-bold shadow-sm ${selectedDrop.likedByMe ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-pink-50 text-pink-500 hover:bg-pink-100'}`}
-              >
-                <Heart size={20} fill={selectedDrop.likedByMe ? 'currentColor' : 'none'} />
-                {selectedDrop.likedByMe ? 'いいね済み' : 'いいね'}
+          {!selectedDrop.isAd && (
+            selectedDrop.isMine ? (
+              <button onClick={() => handleDeleteDrop(selectedDrop.id)} className="w-full py-3.5 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center gap-2 hover:bg-rose-100 transition font-bold shadow-sm">
+                Dropを取り消す
               </button>
-              <button
-                onClick={handleSyncRequest}
-                className="flex-1 py-3.5 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-md transition bg-gradient-to-r from-sky-500 to-blue-500 text-white hover:opacity-90"
-              >
-                <MessageCircle size={20} /> 会話する
-              </button>
-            </div>
+            ) : (
+              <div className="flex w-full gap-3">
+                <button
+                  onClick={() => handleLike(selectedDrop.id)}
+                  disabled={selectedDrop.likedByMe}
+                  className={`flex-1 py-3.5 rounded-2xl flex items-center justify-center gap-2 transition font-bold shadow-sm ${selectedDrop.likedByMe ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-pink-50 text-pink-500 hover:bg-pink-100'}`}
+                >
+                  <Heart size={20} fill={selectedDrop.likedByMe ? 'currentColor' : 'none'} />
+                  {selectedDrop.likedByMe ? 'いいね済み' : 'いいね'}
+                </button>
+                <button
+                  onClick={handleSyncRequest}
+                  className="flex-1 py-3.5 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-md transition bg-gradient-to-r from-sky-500 to-blue-500 text-white hover:opacity-90"
+                >
+                  <MessageCircle size={20} /> 会話する
+                </button>
+              </div>
+            )
           )}
         </div>
       )}
