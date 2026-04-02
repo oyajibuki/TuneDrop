@@ -578,7 +578,7 @@ const SpaceScreen = ({
                 <video 
                   src={dropMedia.preview} 
                   className="w-full h-full object-cover" 
-                  autoPlay muted loop playsInline 
+                  controls autoPlay muted loop playsInline 
                 />
               ) : (
                 <img src={dropMedia.preview} className="w-full h-full object-cover" alt="preview" />
@@ -1651,7 +1651,8 @@ const App = () => {
 
   const handleMyDrop = async (e) => {
     e.preventDefault();
-    if (!myDropText.trim() || myDropCooldown > 0 || !authUser || isUploading) return;
+    // メッセージが空でもメディアがあればOK
+    if ((!myDropText.trim() && !dropMedia) || myDropCooldown > 0 || !authUser || isUploading) return;
 
     setIsUploading(true);
     try {
