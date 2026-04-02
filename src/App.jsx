@@ -255,7 +255,7 @@ const SpaceScreen = ({
   selectedDrop, setSelectedDrop, handleCatch, handleSyncRequest, handleDeleteDrop, handleLike,
   handleBlock, handleReport, setIsSettingsOpen,
   dropMedia, setDropMedia, dropMediaInputRef,
-  scale, setScale,
+  scale, setScale, isUploading,
 }) => {
   const [isWinding, setIsWinding] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -1652,7 +1652,8 @@ const App = () => {
   const handleMyDrop = async (e) => {
     e.preventDefault();
     // メッセージが空でもメディアがあればOK
-    if ((!myDropText.trim() && !dropMedia) || myDropCooldown > 0 || !authUser || isUploading) return;
+    const canSend = myDropText.trim().length > 0 || dropMedia;
+    if (!canSend || myDropCooldown > 0 || !authUser || isUploading) return;
 
     setIsUploading(true);
     try {
@@ -1924,6 +1925,7 @@ const App = () => {
           handleBlock={handleBlock} handleReport={handleReport} setIsSettingsOpen={setIsSettingsOpen}
           scale={scale} setScale={setScale}
           dropMedia={dropMedia} setDropMedia={setDropMedia} dropMediaInputRef={dropMediaInputRef}
+          isUploading={isUploading}
         />
       )}
       {screen === 'room'    && (
