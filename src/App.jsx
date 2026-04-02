@@ -83,7 +83,6 @@ const generateBotDrops = (countPerBot = 8) => {
     })
   );
 
-  const CANVAS_SIZE = 4000;
   botDrops.push({
     id: `ad-oshipay-${Date.now()}`,
     text: "OshiPay\nその感動、今すぐカタチに。",
