@@ -219,9 +219,110 @@ const toLocalDrop = (drop, myUserId) => ({
   mediaType: drop.media_type || null,
 });
 
+// --- 利用規約モーダル ---
+const TermsModal = ({ type, onClose }) => {
+  const isTerms = type === 'terms';
+  return (
+    <div className="fixed inset-0 z-[500] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col max-h-[85vh]">
+        <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-slate-100 shrink-0">
+          <h2 className="text-lg font-bold text-slate-800">{isTerms ? '利用規約' : 'プライバシーポリシー'}</h2>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full transition"><X size={18} /></button>
+        </div>
+        <div className="overflow-y-auto px-6 py-5 text-sm text-slate-600 space-y-5 leading-relaxed">
+          {isTerms ? (
+            <>
+              <p className="text-xs text-slate-400">最終更新日：2026年4月4日</p>
+              <section>
+                <h3 className="font-bold text-slate-800 mb-1">第1条（適用）</h3>
+                <p>本規約は、TuneDrop（以下「本サービス」）の利用に関する条件を定めるものです。ユーザーは本規約に同意した上で本サービスを利用するものとします。</p>
+              </section>
+              <section>
+                <h3 className="font-bold text-slate-800 mb-1">第2条（禁止事項）</h3>
+                <p>以下の行為を禁止します。</p>
+                <ul className="list-disc list-inside mt-1 space-y-1">
+                  <li>他者への誹謗中傷・脅迫・ハラスメント</li>
+                  <li>個人情報（LINE ID・メールアドレス・電話番号等）の送信</li>
+                  <li>わいせつ・暴力的なコンテンツの投稿</li>
+                  <li>未成年者に有害なコンテンツの投稿</li>
+                  <li>スパム・営業目的の利用</li>
+                  <li>本サービスの運営を妨害する行為</li>
+                  <li>その他、法令または公序良俗に反する行為</li>
+                </ul>
+              </section>
+              <section>
+                <h3 className="font-bold text-slate-800 mb-1">第3条（コンテンツ）</h3>
+                <p>ユーザーが投稿したDropは30分で自動削除されます。チャットメッセージは会話終了後に削除されます。運営は不適切なコンテンツを予告なく削除できます。</p>
+              </section>
+              <section>
+                <h3 className="font-bold text-slate-800 mb-1">第4条（アカウント停止）</h3>
+                <p>禁止事項に違反したユーザーは、事前通知なくアカウントを停止・削除する場合があります。</p>
+              </section>
+              <section>
+                <h3 className="font-bold text-slate-800 mb-1">第5条（免責事項）</h3>
+                <p>本サービスはユーザー間のコミュニケーションを仲介するものであり、ユーザー間のトラブルについて運営は一切の責任を負いません。サービスは予告なく変更・停止する場合があります。</p>
+              </section>
+              <section>
+                <h3 className="font-bold text-slate-800 mb-1">第6条（年齢制限）</h3>
+                <p>本サービスは13歳以上を対象としています。13歳未満の方はご利用いただけません。</p>
+              </section>
+              <section>
+                <h3 className="font-bold text-slate-800 mb-1">第7条（準拠法）</h3>
+                <p>本規約は日本法に準拠し、東京地方裁判所を第一審の専属的合意管轄裁判所とします。</p>
+              </section>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-slate-400">最終更新日：2026年4月4日</p>
+              <section>
+                <h3 className="font-bold text-slate-800 mb-1">収集する情報</h3>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>ログイン情報（Google・LINEアカウントの公開プロフィール）</li>
+                  <li>ニックネーム・生年月日・性別（ユーザー登録時）</li>
+                  <li>投稿コンテンツ（Drop・メッセージ・画像・動画）</li>
+                  <li>オンライン状態・アクセス日時</li>
+                </ul>
+              </section>
+              <section>
+                <h3 className="font-bold text-slate-800 mb-1">情報の利用目的</h3>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>サービスの提供・運営</li>
+                  <li>ユーザー同士のマッチング</li>
+                  <li>不正利用の防止・監視</li>
+                  <li>サービス改善のための分析</li>
+                </ul>
+              </section>
+              <section>
+                <h3 className="font-bold text-slate-800 mb-1">情報の保管・削除</h3>
+                <p>Dropは30分、チャットメッセージは会話終了後に自動削除されます。アカウント削除時はすべての個人情報を削除します。データはSupabase（米国）のサーバーに保存されます。</p>
+              </section>
+              <section>
+                <h3 className="font-bold text-slate-800 mb-1">第三者提供</h3>
+                <p>法令に基づく場合を除き、ユーザーの個人情報を第三者に提供しません。Google・LINE等の認証プロバイダーとのデータ連携はそれぞれの規約に従います。</p>
+              </section>
+              <section>
+                <h3 className="font-bold text-slate-800 mb-1">Cookie・トラッキング</h3>
+                <p>認証状態の維持のためにセッション情報をローカルストレージに保存します。広告目的のトラッキングは行いません。</p>
+              </section>
+              <section>
+                <h3 className="font-bold text-slate-800 mb-1">お問い合わせ</h3>
+                <p>プライバシーに関するご質問はアプリ内の設定画面からお問い合わせください。</p>
+              </section>
+            </>
+          )}
+        </div>
+        <div className="px-6 py-4 shrink-0">
+          <button onClick={onClose} className="w-full py-3 bg-sky-500 text-white rounded-2xl font-bold hover:bg-sky-600 transition">閉じる</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- LoginScreen ---
 const LoginScreen = ({ onGoogleLogin, onLineLogin }) => {
   const [agreed, setAgreed] = useState(false);
+  const [modal, setModal] = useState(null); // 'terms' | 'privacy' | null
 
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-b from-sky-400 to-sky-200 text-white p-6 relative">
@@ -230,18 +331,23 @@ const LoginScreen = ({ onGoogleLogin, onLineLogin }) => {
         必要最低限で繋がる。<br />5分で消える、今の思い。
       </p>
 
-      <label className="flex items-center gap-3 mb-8 text-sm text-sky-50 bg-black/10 px-5 py-3 rounded-2xl cursor-pointer hover:bg-black/20 transition backdrop-blur-sm border border-white/20 w-full max-w-sm">
+      <div className="flex items-start gap-3 mb-8 w-full max-w-sm bg-black/10 px-5 py-3 rounded-2xl backdrop-blur-sm border border-white/20">
         <input
+          id="agree-check"
           type="checkbox"
           checked={agreed}
           onChange={e => setAgreed(e.target.checked)}
-          className="w-5 h-5 rounded border-sky-200 text-sky-500 focus:ring-sky-500 bg-white/20 cursor-pointer"
+          className="w-5 h-5 mt-0.5 rounded border-sky-200 text-sky-500 focus:ring-sky-500 bg-white/20 cursor-pointer shrink-0"
         />
-        <span className="font-medium leading-tight">利用規約とプライバシーポリシーに同意する</span>
-      </label>
+        <label htmlFor="agree-check" className="text-sm text-sky-50 font-medium leading-snug cursor-pointer">
+          <button type="button" onClick={() => setModal('terms')} className="underline underline-offset-2 hover:text-white transition">利用規約</button>
+          と
+          <button type="button" onClick={() => setModal('privacy')} className="underline underline-offset-2 hover:text-white transition">プライバシーポリシー</button>
+          に同意する
+        </label>
+      </div>
 
       <div className="w-full max-w-sm space-y-3">
-        {/* LINE ログインボタン (最優先) */}
         <button
           onClick={() => agreed && onLineLogin()}
           className={`w-full py-4 bg-[#06C755] text-white rounded-2xl font-bold flex items-center justify-center gap-2 transition shadow-md ${!agreed ? 'opacity-40 cursor-not-allowed' : 'hover:brightness-110'}`}
@@ -255,8 +361,9 @@ const LoginScreen = ({ onGoogleLogin, onLineLogin }) => {
         >
           <LogIn size={20} /> Googleでログイン
         </button>
-
       </div>
+
+      {modal && <TermsModal type={modal} onClose={() => setModal(null)} />}
     </div>
   );
 };
