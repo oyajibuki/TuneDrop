@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { flushSync } from 'react-dom';
 import {
   Camera, MessageCircle, Settings, X, Heart, Flag, Ban, MoreVertical,
   Send, Clock, LogOut, CheckCircle, Trash2, Edit2, LogIn, Wind,
@@ -221,7 +220,7 @@ const toLocalDrop = (drop, myUserId) => ({
 });
 
 // --- LoginScreen ---
-const LoginScreen = ({ onGoogleLogin, onLineLogin }) => {
+const LoginScreen = ({ onGoogleLogin, onLineLogin, onXLogin }) => {
   const [agreed, setAgreed] = useState(false);
 
   return (
@@ -255,6 +254,14 @@ const LoginScreen = ({ onGoogleLogin, onLineLogin }) => {
           className={`w-full py-4 bg-white text-slate-700 rounded-2xl font-bold flex items-center justify-center gap-2 transition shadow-md ${!agreed ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-50'}`}
         >
           <LogIn size={20} /> Googleでログイン
+        </button>
+
+        <button
+          onClick={() => agreed && onXLogin()}
+          className={`w-full py-4 bg-black text-white rounded-2xl font-bold flex items-center justify-center gap-2 transition shadow-md ${!agreed ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-800'}`}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.253 5.622 5.91-5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+          Xでログイン
         </button>
       </div>
     </div>
@@ -335,63 +342,6 @@ const SpaceScreen = ({
   scaleRef.current = scale;
   cameraRef.current = camera;
 
-  // 巡回: RAF + 直接DOM操作（Reactを介さないので滑らか）
-  const dropWrapRef = useRef(null);
-  const circOffsetRef = useRef({ x: 0, y: 0 });
-  const circRafRef = useRef(null);
-  const circFrameRef = useRef(0);
-  const circAngleRef = useRef(0); // ランダムウォーク方向
-
-  useEffect(() => {
-    if (!isCirculating) {
-      if (circRafRef.current) cancelAnimationFrame(circRafRef.current);
-      circRafRef.current = null;
-      if (dropWrapRef.current) dropWrapRef.current.style.transform = '';
-      if (circOffsetRef.current.x !== 0 || circOffsetRef.current.y !== 0) {
-        setCamera(prev => ({
-          x: (prev.x + circOffsetRef.current.x + CANVAS_SIZE) % CANVAS_SIZE,
-          y: (prev.y + circOffsetRef.current.y + CANVAS_SIZE) % CANVAS_SIZE,
-        }));
-        circOffsetRef.current = { x: 0, y: 0 };
-      }
-      return;
-    }
-    let lastTime = null;
-    const step = (ts) => {
-      if (lastTime !== null) {
-        const dt = Math.min(ts - lastTime, 33);
-        circFrameRef.current += dt;
-        // ゆっくり方向を変えるランダムウォーク（同じ場所をループしない）
-        circAngleRef.current += Math.sin(circFrameRef.current * 0.00025) * 0.018;
-        const speed = 22; // canvas units/sec
-        const dx = Math.cos(circAngleRef.current) * speed * dt / 1000;
-        const dy = Math.sin(circAngleRef.current) * speed * dt / 1000;
-        circOffsetRef.current.x += dx;
-        circOffsetRef.current.y += dy;
-        if (dropWrapRef.current) {
-          dropWrapRef.current.style.transform =
-            `translate(${-circOffsetRef.current.x}px, ${-circOffsetRef.current.y}px)`;
-        }
-        // 閾値超えたら flushSync でReact stateとDOM resetを同一フレームに強制コミット→スナップなし
-        if (Math.abs(circOffsetRef.current.x) > 500 || Math.abs(circOffsetRef.current.y) > 500) {
-          const snapX = circOffsetRef.current.x;
-          const snapY = circOffsetRef.current.y;
-          circOffsetRef.current = { x: 0, y: 0 };
-          if (dropWrapRef.current) dropWrapRef.current.style.transform = '';
-          flushSync(() => {
-            setCamera(prev => ({
-              x: (prev.x + snapX + CANVAS_SIZE) % CANVAS_SIZE,
-              y: (prev.y + snapY + CANVAS_SIZE) % CANVAS_SIZE,
-            }));
-          });
-        }
-      }
-      lastTime = ts;
-      circRafRef.current = requestAnimationFrame(step);
-    };
-    circRafRef.current = requestAnimationFrame(step);
-    return () => { if (circRafRef.current) cancelAnimationFrame(circRafRef.current); };
-  }, [isCirculating, setCamera]);
 
   useEffect(() => { setShowMenu(false); }, [selectedDrop]);
 
@@ -553,7 +503,6 @@ const SpaceScreen = ({
         style={{ cursor: isDragging && !draggingDropId ? 'grabbing' : 'grab' }}
       >
         <div className="absolute inset-0 origin-center" style={{ transform: `scale(${scale})`, transition: isDragging || draggingDropId ? 'none' : 'transform 0.15s ease-out' }}>
-          <div ref={dropWrapRef} className="absolute inset-0">
           {drops.map(drop => {
             const age = now - drop.createdAt;
             const lifeRatio = Math.max(0, 1 - age / DROP_LIFETIME);
@@ -580,7 +529,7 @@ const SpaceScreen = ({
                 key={drop.id}
                 onPointerDown={(e) => onDropPointerDown(e, drop)}
                 className="absolute flex flex-col items-center justify-center cursor-pointer group"
-                style={{ left: `${cx + dx}px`, top: `${cy + dy}px`, transition: drop.isPopping ? 'left 1.5s ease-out, top 1.5s ease-out' : 'none', opacity, animation: isBeingDragged ? 'none' : `float${drop.animType} ${4 + drop.animType}s ease-in-out infinite`, animationDelay: isBeingDragged ? '0s' : `${drop.animDelay}s`, zIndex: isBeingDragged ? 50 : 10 }}
+                style={{ left: `${cx + dx}px`, top: `${cy + dy}px`, transition: drop.isPopping ? 'left 1.5s ease-out, top 1.5s ease-out' : (isCirculating && !isBeingDragged) ? 'left 0.13s linear, top 0.13s linear' : 'none', opacity, animation: isBeingDragged ? 'none' : `float${drop.animType} ${4 + drop.animType}s ease-in-out infinite`, animationDelay: isBeingDragged ? '0s' : `${drop.animDelay}s`, zIndex: isBeingDragged ? 50 : 10 }}
               >
                 <div
                   className={`flex items-center gap-3 p-2 pr-6 rounded-full backdrop-blur-md transition-all duration-300 ease-out ${drop.isBot && !drop.isAd ? 'bg-violet-100/70 group-hover:bg-violet-100/90' : 'bg-white/40 group-hover:bg-white/60'} ${isBeingDragged ? 'ring-2 ring-white/50 scale-105' : ''}`}
@@ -618,7 +567,6 @@ const SpaceScreen = ({
               </div>
             );
           })}
-          </div>
         </div>
       </div>
 
@@ -1574,6 +1522,13 @@ const App = () => {
     });
   };
 
+  const handleXLogin = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'twitter',
+      options: { redirectTo: REDIRECT_URL },
+    });
+  };
+
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
     if (!authUser) return;
@@ -1793,34 +1748,42 @@ const App = () => {
     }
   }, [myDropCooldown]);
 
-  // ─── BGM（クラシック音楽: HTML Audio） ───
-  // 曲目: Satie - Gymnopédie No.1 / Bach - Cello Suite No.1 / Debussy - Clair de Lune
-  const BGM_TRACKS = [
-    { label: 'ジムノペディ (Satie)', url: 'https://upload.wikimedia.org/wikipedia/commons/e/e7/Gymnopedie_No._1.ogg' },
-    { label: 'チェロ組曲 (Bach)', url: 'https://upload.wikimedia.org/wikipedia/commons/f/fb/Bach_-_Cello_Suite_No._1_in_G_major%2C_BWV_1007_-_1._Prelude.ogg' },
-    { label: '亡き王女のためのパヴァーヌ (Ravel)', url: 'https://upload.wikimedia.org/wikipedia/commons/c/c0/Pavane_pour_une_infante_d%C3%A9funte.ogg' },
-  ];
-  const [bgmTrackIdx, setBgmTrackIdx] = useState(() => parseInt(localStorage.getItem('tuneDropBgmTrack') || '0'));
+  // ─── 巡回モード（setInterval + CSS transition で滑らか移動）───
+  useEffect(() => {
+    if (!isCirculating || screen !== 'space') return;
+    let angle = Math.random() * Math.PI * 2; // 毎回ランダムな方向からスタート
+    let t = 0;
+    const id = setInterval(() => {
+      t += 100;
+      angle += Math.sin(t * 0.00022) * 0.09; // ゆっくり方向が変わるランダムウォーク
+      const speed = 18; // canvas units/sec
+      const dx = Math.cos(angle) * speed * 0.1;
+      const dy = Math.sin(angle) * speed * 0.1;
+      setCamera(prev => ({
+        x: (prev.x + dx + CANVAS_SIZE) % CANVAS_SIZE,
+        y: (prev.y + dy + CANVAS_SIZE) % CANVAS_SIZE,
+      }));
+    }, 100);
+    return () => clearInterval(id);
+  }, [isCirculating, screen]);
 
+  // ─── BGM（Where_the_Wind_Stops.mp3 / ON・OFFのみ）───
   useEffect(() => {
     if (!bgmEnabled) {
       if (bgmAudioRef.current) { bgmAudioRef.current.pause(); bgmAudioRef.current = null; }
       return;
     }
-    const track = BGM_TRACKS[bgmTrackIdx] || BGM_TRACKS[0];
     if (bgmAudioRef.current) { bgmAudioRef.current.pause(); bgmAudioRef.current = null; }
-    const audio = new Audio(track.url);
+    const audio = new Audio(import.meta.env.BASE_URL + 'Where_the_Wind_Stops.mp3');
     audio.loop = true;
-    audio.volume = 0.28;
+    audio.volume = 0.3;
     bgmAudioRef.current = audio;
     audio.play().catch(() => {
-      // autoplay blocked — silently disable
       setBgmEnabled(false);
       localStorage.setItem('tuneDropBgm', 'false');
     });
     return () => { audio.pause(); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bgmEnabled, bgmTrackIdx]);
+  }, [bgmEnabled]);
 
   // ─── 着信通知音（bot自動着信も含む全ての着信でトリガー）───
   useEffect(() => {
@@ -2122,7 +2085,7 @@ const App = () => {
 
   return (
     <div className="font-sans antialiased w-full h-screen bg-sky-50 overflow-hidden relative">
-      {screen === 'login'   && <LoginScreen onGoogleLogin={handleGoogleLogin} onLineLogin={handleLineLogin} />}
+      {screen === 'login'   && <LoginScreen onGoogleLogin={handleGoogleLogin} onLineLogin={handleLineLogin} onXLogin={handleXLogin} />}
       {screen === 'profile' && <ProfileScreen userProfile={userProfile} setUserProfile={setUserProfile} onSubmit={handleProfileSubmit} />}
       {screen === 'space'   && (
         <SpaceScreen
@@ -2205,17 +2168,6 @@ const App = () => {
                         <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${bgmEnabled ? 'left-5' : 'left-0.5'}`} />
                       </button>
                     </div>
-                    {bgmEnabled && (
-                      <div className="mt-2">
-                        <select
-                          value={bgmTrackIdx}
-                          onChange={e => { const v = parseInt(e.target.value); setBgmTrackIdx(v); localStorage.setItem('tuneDropBgmTrack', v); }}
-                          className="w-full bg-white border border-slate-200 rounded-xl p-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-400"
-                        >
-                          {BGM_TRACKS.map((t, i) => <option key={i} value={i}>{t.label}</option>)}
-                        </select>
-                      </div>
-                    )}
                   </div>
                 </div>
 
