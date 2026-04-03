@@ -220,7 +220,7 @@ const toLocalDrop = (drop, myUserId) => ({
 });
 
 // --- LoginScreen ---
-const LoginScreen = ({ onGoogleLogin, onLineLogin, onXLogin }) => {
+const LoginScreen = ({ onGoogleLogin, onLineLogin }) => {
   const [agreed, setAgreed] = useState(false);
 
   return (
@@ -256,13 +256,6 @@ const LoginScreen = ({ onGoogleLogin, onLineLogin, onXLogin }) => {
           <LogIn size={20} /> Googleでログイン
         </button>
 
-        <button
-          onClick={() => agreed && onXLogin()}
-          className={`w-full py-4 bg-black text-white rounded-2xl font-bold flex items-center justify-center gap-2 transition shadow-md ${!agreed ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-800'}`}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.253 5.622 5.91-5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-          Xでログイン
-        </button>
       </div>
     </div>
   );
@@ -1522,12 +1515,6 @@ const App = () => {
     });
   };
 
-  const handleXLogin = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: 'twitter',
-      options: { redirectTo: REDIRECT_URL },
-    });
-  };
 
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
@@ -2085,7 +2072,7 @@ const App = () => {
 
   return (
     <div className="font-sans antialiased w-full h-screen bg-sky-50 overflow-hidden relative">
-      {screen === 'login'   && <LoginScreen onGoogleLogin={handleGoogleLogin} onLineLogin={handleLineLogin} onXLogin={handleXLogin} />}
+      {screen === 'login'   && <LoginScreen onGoogleLogin={handleGoogleLogin} onLineLogin={handleLineLogin} />}
       {screen === 'profile' && <ProfileScreen userProfile={userProfile} setUserProfile={setUserProfile} onSubmit={handleProfileSubmit} />}
       {screen === 'space'   && (
         <SpaceScreen
