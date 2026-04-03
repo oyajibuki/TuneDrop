@@ -287,32 +287,39 @@ const TermsModal = ({ type, onClose }) => {
               <section>
                 <h3 className="font-bold text-slate-800 mb-1">収集する情報</h3>
                 <ul className="list-disc list-inside space-y-1">
-                  <li>ログイン情報（Google・LINEアカウントの公開プロフィール）</li>
-                  <li>ニックネーム・生年月日・性別（ユーザー登録時）</li>
+                  <li>ログイン識別情報（Google・LINEアカウントのID・公開プロフィール）</li>
+                  <li>ニックネーム・年代・性別（ユーザー登録時）</li>
                   <li>投稿コンテンツ（Drop・メッセージ・画像・動画）</li>
-                  <li>オンライン状態・アクセス日時</li>
+                  <li>オンライン状態・アクセス日時・利用傾向</li>
                 </ul>
               </section>
               <section>
                 <h3 className="font-bold text-slate-800 mb-1">情報の利用目的</h3>
                 <ul className="list-disc list-inside space-y-1">
-                  <li>サービスの提供・運営</li>
+                  <li>サービスの提供・運営・改善</li>
                   <li>ユーザー同士のマッチング</li>
                   <li>不正利用の防止・監視</li>
-                  <li>サービス改善のための分析</li>
+                  <li>利用状況の集計・分析（マーケティング・機能改善を含む）</li>
+                  <li>新機能・お知らせの通知</li>
                 </ul>
               </section>
               <section>
                 <h3 className="font-bold text-slate-800 mb-1">情報の保管・削除</h3>
-                <p>Dropは30分、チャットメッセージは会話終了後に自動削除されます。アカウント削除時はすべての個人情報を削除します。データはSupabase（米国）のサーバーに保存されます。</p>
+                <p>Dropは30分、チャットメッセージは会話終了後に自動削除されます。アカウント削除時はすべての登録情報を削除します。データはSupabase（米国）のサーバーに保存されます。</p>
               </section>
               <section>
-                <h3 className="font-bold text-slate-800 mb-1">第三者提供</h3>
-                <p>法令に基づく場合を除き、ユーザーの個人情報を第三者に提供しません。Google・LINE等の認証プロバイダーとのデータ連携はそれぞれの規約に従います。</p>
+                <h3 className="font-bold text-slate-800 mb-1">第三者提供・外部サービス連携</h3>
+                <p>個人を特定できる情報を第三者に販売することはありません。以下の目的でデータを共有する場合があります。</p>
+                <ul className="list-disc list-inside space-y-1 mt-1">
+                  <li>Google・LINE等の認証プロバイダー（それぞれの規約に従います）</li>
+                  <li>サービス運営に必要なインフラ事業者（Supabase等）</li>
+                  <li>利用統計の集計・分析ツール（個人を特定しない形式）</li>
+                  <li>法令に基づき開示が必要な場合</li>
+                </ul>
               </section>
               <section>
-                <h3 className="font-bold text-slate-800 mb-1">Cookie・トラッキング</h3>
-                <p>認証状態の維持のためにセッション情報をローカルストレージに保存します。広告目的のトラッキングは行いません。</p>
+                <h3 className="font-bold text-slate-800 mb-1">Cookie・ローカルストレージ</h3>
+                <p>認証状態の維持・設定保存のためにローカルストレージを使用します。分析目的でアクセスログを収集する場合があります。</p>
               </section>
               <section>
                 <h3 className="font-bold text-slate-800 mb-1">お問い合わせ</h3>
