@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Camera, MessageCircle, Settings, X, Heart, Flag, Ban, MoreVertical, 
+import {
+  Camera, MessageCircle, Settings, X, Heart, Flag, Ban, MoreVertical,
   Send, Clock, LogOut, CheckCircle, Trash2, Edit2, LogIn, Wind,
-  DoorOpen, AlertCircle, Star
+  DoorOpen, AlertCircle, Star, Play, Pause, Volume2, VolumeX, Bot
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
@@ -50,6 +50,42 @@ const BOT_REPLIES = [
   'ありがとういってくれて','そういう夜あるよね','なんかほっとした',
   'もうちょっと聞かせて','なんかいい','うまく言えないけどわかる',
 ];
+// --- 効果音ユーティリティ ---
+const playTone = (ctx, freq, duration, type = 'sine', vol = 0.3, delay = 0) => {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0, ctx.currentTime + delay);
+  gain.gain.linearRampToValueAtTime(vol, ctx.currentTime + delay + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + duration);
+  osc.start(ctx.currentTime + delay);
+  osc.stop(ctx.currentTime + delay + duration + 0.05);
+};
+const SOUND_DEFS = {
+  drop: (ctx) => {
+    playTone(ctx, 523, 0.15, 'sine', 0.25);
+    playTone(ctx, 784, 0.2, 'sine', 0.15, 0.1);
+  },
+  like: (ctx) => {
+    playTone(ctx, 659, 0.1, 'sine', 0.2);
+    playTone(ctx, 880, 0.15, 'sine', 0.2, 0.08);
+    playTone(ctx, 1047, 0.2, 'sine', 0.15, 0.16);
+  },
+  incoming: (ctx) => {
+    playTone(ctx, 440, 0.2, 'sine', 0.2);
+    playTone(ctx, 440, 0.2, 'sine', 0.2, 0.35);
+    playTone(ctx, 554, 0.4, 'sine', 0.25, 0.7);
+  },
+  roomStart: (ctx) => {
+    playTone(ctx, 392, 0.3, 'sine', 0.2);
+    playTone(ctx, 523, 0.3, 'sine', 0.2, 0.15);
+    playTone(ctx, 659, 0.5, 'sine', 0.2, 0.3);
+  },
+};
+
 const generateBotDrops = (countPerBot = 8) => {
   const colors = ['hsla(200,70%,90%,0.9)','hsla(280,60%,90%,0.9)','hsla(340,60%,92%,0.9)','hsla(150,50%,88%,0.9)','hsla(30,60%,90%,0.9)'];
   const commonWords = ['暇', 'おなかすいた', 'ごはん', '音楽', '映画', '寝', '寂', '眠', '疲れ', '仕事', '学校', 'だるい', '最高', 'いいこと', '悩み', '空'];
@@ -256,6 +292,7 @@ const SpaceScreen = ({
   handleBlock, handleReport, setIsSettingsOpen,
   dropMedia, setDropMedia, dropMediaInputRef,
   scale, setScale, isUploading,
+  isCirculating, onToggleCirculate,
 }) => {
   const [isWinding, setIsWinding] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -461,7 +498,7 @@ const SpaceScreen = ({
                 style={{ left: `${cx + dx}px`, top: `${cy + dy}px`, transition: drop.isPopping ? 'left 1.5s ease-out, top 1.5s ease-out' : 'none', opacity, animation: isBeingDragged ? 'none' : `float${drop.animType} ${4 + drop.animType}s ease-in-out infinite`, animationDelay: isBeingDragged ? '0s' : `${drop.animDelay}s`, zIndex: isBeingDragged ? 50 : 10 }}
               >
                 <div
-                  className={`flex items-center gap-3 p-2 pr-6 rounded-full bg-white/40 backdrop-blur-md transition-all duration-300 ease-out group-hover:bg-white/60 ${isBeingDragged ? 'ring-2 ring-white/50 scale-105' : ''}`}
+                  className={`flex items-center gap-3 p-2 pr-6 rounded-full backdrop-blur-md transition-all duration-300 ease-out ${drop.isBot && !drop.isAd ? 'bg-violet-100/70 group-hover:bg-violet-100/90' : 'bg-white/40 group-hover:bg-white/60'} ${isBeingDragged ? 'ring-2 ring-white/50 scale-105' : ''}`}
                   style={{ transform: `scale(${dropScale})`, boxShadow: glowShadow, border: `2px solid ${borderColor}` }}
                 >
                   <div className="relative">
@@ -483,6 +520,11 @@ const SpaceScreen = ({
                   )}
                 </div>
                 {drop.isMine && <span className="absolute -top-4 -right-2 bg-sky-500 text-white text-[10px] px-2 py-0.5 rounded-full shadow-sm z-10 pointer-events-none">Me</span>}
+                {drop.isBot && !drop.isAd && (
+                  <span className="absolute -top-4 -left-2 bg-violet-400 text-white text-[10px] px-1.5 py-0.5 rounded-full shadow-sm z-10 pointer-events-none flex items-center gap-0.5">
+                    <Bot size={8} /> BOT
+                  </span>
+                )}
                 {drop.isAd && (
                   <span className="absolute -top-4 -left-2 bg-amber-400 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm z-10 border border-amber-200 pointer-events-none flex items-center gap-0.5">
                     <Star size={8} fill="currentColor" /> PR
@@ -496,6 +538,12 @@ const SpaceScreen = ({
 
       {/* Catch Popup */}
       {selectedDrop && (
+        <>
+          <div
+            className="absolute inset-0 z-40"
+            onPointerDown={stopPropagation} onPointerMove={stopPropagation} onPointerUp={stopPropagation}
+            onClick={() => setSelectedDrop(null)}
+          />
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white/95 backdrop-blur-md p-6 rounded-3xl shadow-2xl z-50 flex flex-col items-center min-w-[280px]"
           onPointerDown={stopPropagation} onPointerMove={stopPropagation} onPointerUp={stopPropagation}>
           <button className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1" onClick={() => setSelectedDrop(null)}><X size={20} /></button>
@@ -559,6 +607,7 @@ const SpaceScreen = ({
             )
           )}
         </div>
+        </>
       )}
 
       {/* 投稿前のメディアプレビュー */}
@@ -623,13 +672,23 @@ const SpaceScreen = ({
         onPointerDown={stopPropagation} onPointerMove={stopPropagation} onPointerUp={stopPropagation}
       >
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleWind}
-            className={`p-4 rounded-full bg-white/80 border-2 border-white backdrop-blur-md text-sky-500 shadow-lg transition-transform ${isWinding ? 'animate-spin' : 'hover:scale-110 active:scale-95'}`}
-          >
-            <Wind size={24} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onToggleCirculate}
+              title={isCirculating ? '巡回停止' : '巡回開始'}
+              className={`p-4 rounded-full backdrop-blur-md shadow-lg transition-transform hover:scale-110 active:scale-95 border-2 ${isCirculating ? 'bg-sky-400/90 border-sky-300 text-white' : 'bg-white/80 border-white text-sky-500'}`}
+            >
+              {isCirculating ? <Pause size={24} /> : <Play size={24} />}
+            </button>
+            <button
+              type="button"
+              onClick={handleWind}
+              className={`p-4 rounded-full bg-white/80 border-2 border-white backdrop-blur-md text-sky-500 shadow-lg transition-transform ${isWinding ? 'animate-spin' : 'hover:scale-110 active:scale-95'}`}
+            >
+              <Wind size={24} />
+            </button>
+          </div>
           <form onSubmit={handleMyDrop} className="flex-1 relative">
             <input
               name="dropText" type="text"
@@ -1318,6 +1377,16 @@ const App = () => {
   const [isBotRoom, setIsBotRoom] = useState(false);
   const [botUser, setBotUser] = useState(null);
 
+  // 巡回・サウンド設定
+  const [isCirculating, setIsCirculating] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('tuneDropSound') !== 'false');
+  const [bgmEnabled, setBgmEnabled] = useState(() => localStorage.getItem('tuneDropBgm') === 'true');
+  const audioCtxRef = useRef(null);
+  const bgmNodesRef = useRef(null);
+  const soundEnabledRef = useRef(soundEnabled);
+  soundEnabledRef.current = soundEnabled;
+  const circulationFrameRef = useRef(0);
+
   const authUserRef = useRef(null);
   authUserRef.current = authUser;
 
@@ -1501,16 +1570,12 @@ const App = () => {
               di.y = (di.y - pushY + CANVAS_SIZE) % CANVAS_SIZE;
               dj.x = (dj.x + pushX + CANVAS_SIZE) % CANVAS_SIZE;
               dj.y = (dj.y + pushY + CANVAS_SIZE) % CANVAS_SIZE;
-              
-              di.isPopping = true; 
-              dj.isPopping = true;
               moved = true;
             }
           }
         }
         return moved ? newDrops : prev;
       });
-      setTimeout(() => setDrops(prev => prev.map(d => d.isPopping ? { ...d, isPopping: false } : d)), 600);
     }, 1500);
     
     // 30分おきにボットドロップを再生成（古いものを置換）
@@ -1589,6 +1654,7 @@ const App = () => {
             roomId: room.id,
             isBot: false,
           });
+          playSound('incoming');
         }
       )
       .subscribe();
@@ -1640,6 +1706,59 @@ const App = () => {
       return () => clearTimeout(t);
     }
   }, [myDropCooldown]);
+
+  // ─── 巡回モード ───
+  useEffect(() => {
+    if (!isCirculating || screen !== 'space') return;
+    const id = setInterval(() => {
+      circulationFrameRef.current++;
+      setCamera(prev => ({
+        x: (prev.x + 0.8 + CANVAS_SIZE) % CANVAS_SIZE,
+        y: (prev.y + Math.sin(circulationFrameRef.current * 0.015) * 0.4 + CANVAS_SIZE) % CANVAS_SIZE,
+      }));
+    }, 50);
+    return () => clearInterval(id);
+  }, [isCirculating, screen]);
+
+  // ─── BGM ───
+  useEffect(() => {
+    if (!bgmEnabled) {
+      if (bgmNodesRef.current) {
+        try { bgmNodesRef.current.oscs.forEach(o => o.stop()); bgmNodesRef.current.masterGain.disconnect(); } catch(e) {}
+        bgmNodesRef.current = null;
+      }
+      return;
+    }
+    try {
+      if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+      if (bgmNodesRef.current) { try { bgmNodesRef.current.oscs.forEach(o => o.stop()); bgmNodesRef.current.masterGain.disconnect(); } catch(e) {} }
+      const ctx = audioCtxRef.current;
+      const masterGain = ctx.createGain();
+      masterGain.gain.value = 0.04;
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass'; filter.frequency.value = 800;
+      masterGain.connect(filter); filter.connect(ctx.destination);
+      const oscs = [110, 164.81, 220, 329.63].map((freq, i) => {
+        const osc = ctx.createOscillator();
+        osc.type = 'sine'; osc.frequency.value = freq + i * 0.3;
+        const g = ctx.createGain(); g.gain.value = 0.25;
+        osc.connect(g); g.connect(masterGain); osc.start();
+        return osc;
+      });
+      bgmNodesRef.current = { oscs, masterGain };
+    } catch(e) { console.warn('BGM error:', e); }
+  }, [bgmEnabled]);
+
+  // ─── 効果音 ───
+  const playSound = (type) => {
+    if (!soundEnabledRef.current) return;
+    try {
+      if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+      SOUND_DEFS[type]?.(audioCtxRef.current);
+    } catch(e) {}
+  };
 
   // ─── ハンドラー ───
   const getPositionForDrop = (text, currentDrops, isMine) => {
@@ -1700,6 +1819,7 @@ const App = () => {
         const localDrop = toLocalDrop(data, authUser.id, userProfile);
         setDrops(prev => prev.find(d => d.id === localDrop.id) ? prev : [...prev, localDrop]);
         setMyDropCooldown(60);
+        playSound('drop');
         const droppedText = myDropText;
         setMyDropText('');
         setDropMedia(null);
@@ -1732,6 +1852,7 @@ const App = () => {
     setDrops(prev => prev.map(d => d.id === id && !d.likedByMe ? { ...d, likes: (d.likes || 0) + 1, likedByMe: true, isPopping: true } : d));
     setSelectedDrop(prev => prev && prev.id === id && !prev.likedByMe ? { ...prev, likes: (prev.likes || 0) + 1, likedByMe: true } : prev);
     setTimeout(() => setDrops(prev => prev.map(d => d.id === id ? { ...d, isPopping: false } : d)), 300);
+    playSound('like');
   };
 
   const handleBlock = (userName) => {
@@ -1762,6 +1883,7 @@ const App = () => {
         setScreen('room');
         setRoomTime(INITIAL_ROOM_TIME);
         setMessages([{ id: 'bot-sys-1', text: '波長が合いました。5分間のSyncを開始します。', isMine: false, isSystem: true }]);
+        playSound('roomStart');
       }, 2000);
       return;
     }
@@ -1792,11 +1914,13 @@ const App = () => {
       setChatPartner(incomingRequest.partner); setIncomingRequest(null);
       setScreen('room'); setRoomTime(INITIAL_ROOM_TIME);
       setMessages([{ id: 'bot-sys-1', text: '波長が合いました。5分間のSyncを開始します。', isMine: false, isSystem: true }]);
+      playSound('roomStart');
       return;
     }
     await supabase.from('rooms').update({ status: 'active' }).eq('id', incomingRequest.roomId);
     setCurrentRoomId(incomingRequest.roomId); setChatPartner(incomingRequest.partner);
     setIncomingRequest(null); setScreen('room'); setRoomTime(INITIAL_ROOM_TIME); setMessages([]);
+    playSound('roomStart');
   };
 
   const handleDeclineRequest = async () => {
@@ -1926,6 +2050,7 @@ const App = () => {
           scale={scale} setScale={setScale}
           dropMedia={dropMedia} setDropMedia={setDropMedia} dropMediaInputRef={dropMediaInputRef}
           isUploading={isUploading}
+          isCirculating={isCirculating} onToggleCirculate={() => setIsCirculating(v => !v)}
         />
       )}
       {screen === 'room'    && (
@@ -1966,6 +2091,37 @@ const App = () => {
                   <button onClick={openEditProfile} className="p-2 bg-white rounded-full shadow-sm text-sky-500 hover:bg-sky-50 transition">
                     <Edit2 size={18} />
                   </button>
+                </div>
+
+                {/* 音響設定 */}
+                <div className="mb-4 p-4 bg-slate-50 rounded-2xl">
+                  <h4 className="text-sm font-bold text-slate-600 mb-3">音響設定</h4>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Volume2 size={16} className="text-sky-500" />
+                        <span className="text-sm font-medium text-slate-700">効果音</span>
+                      </div>
+                      <button
+                        onClick={() => { const v = !soundEnabled; setSoundEnabled(v); localStorage.setItem('tuneDropSound', v); }}
+                        className={`relative w-11 h-6 rounded-full transition-colors ${soundEnabled ? 'bg-sky-500' : 'bg-slate-300'}`}
+                      >
+                        <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${soundEnabled ? 'left-5' : 'left-0.5'}`} />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {bgmEnabled ? <Volume2 size={16} className="text-sky-500" /> : <VolumeX size={16} className="text-slate-400" />}
+                        <span className="text-sm font-medium text-slate-700">BGM</span>
+                      </div>
+                      <button
+                        onClick={() => { const v = !bgmEnabled; setBgmEnabled(v); localStorage.setItem('tuneDropBgm', v); }}
+                        className={`relative w-11 h-6 rounded-full transition-colors ${bgmEnabled ? 'bg-sky-500' : 'bg-slate-300'}`}
+                      >
+                        <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${bgmEnabled ? 'left-5' : 'left-0.5'}`} />
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="space-y-3">
