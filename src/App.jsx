@@ -180,6 +180,15 @@ const compressImage = (file) => new Promise((resolve) => {
 });
 
 // --- ヘルパー ---
+const AGE_GROUPS = ['10代', '20代', '30代', '40代', '50代', '60代以上'];
+const AGE_GROUP_TO_BIRTH_DATE = {
+  '10代':    '2011-01-01',
+  '20代':    '2001-01-01',
+  '30代':    '1991-01-01',
+  '40代':    '1981-01-01',
+  '50代':    '1971-01-01',
+  '60代以上': '1961-01-01',
+};
 const calculateAgeGroup = (birthDate) => {
   if (!birthDate) return '秘密';
   const today = new Date();
@@ -188,6 +197,7 @@ const calculateAgeGroup = (birthDate) => {
   const m = today.getMonth() - birth.getMonth();
   if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
   if (age < 10) return '10代未満';
+  if (age >= 60) return '60代以上';
   return `${Math.floor(age / 10) * 10}代`;
 };
 
@@ -389,13 +399,15 @@ const ProfileScreen = ({ userProfile, setUserProfile, onSubmit }) => (
         />
       </div>
       <div>
-        <label className="block text-sm text-sky-50 mb-1 font-medium">生年月日</label>
-        <input
-          type="date" required
+        <label className="block text-sm text-sky-50 mb-1 font-medium">年代</label>
+        <select
+          required
           className="w-full bg-white/90 border-none rounded-lg p-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400 shadow-inner"
-          value={userProfile.birthDate}
-          onChange={e => setUserProfile({ ...userProfile, birthDate: e.target.value })}
-        />
+          value={userProfile.ageGroup}
+          onChange={e => setUserProfile({ ...userProfile, ageGroup: e.target.value })}
+        >
+          {AGE_GROUPS.map(ag => <option key={ag} value={ag}>{ag}</option>)}
+        </select>
       </div>
       <div>
         <label className="block text-sm text-sky-50 mb-1 font-medium">性別</label>
@@ -1479,7 +1491,7 @@ const MediaCropModal = ({ imageFile, onConfirm, onCancel }) => {
 const App = () => {
   const [screen, setScreen] = useState('loading');
   const [authUser, setAuthUser] = useState(null);
-  const [userProfile, setUserProfile] = useState({ name: '', birthDate: '', gender: '', avatarUrl: '' });
+  const [userProfile, setUserProfile] = useState({ name: '', ageGroup: '20代', gender: '', avatarUrl: '' });
 
   const [drops, setDrops] = useState([]);
   const [blockedUsers, setBlockedUsers] = useState([]);
@@ -1494,7 +1506,7 @@ const App = () => {
   const [selectedDrop, setSelectedDrop] = useState(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [editForm, setEditForm] = useState({ name: '', birthDate: '', gender: '' });
+  const [editForm, setEditForm] = useState({ name: '', ageGroup: '20代', gender: '' });
   const [cropImage, setCropImage] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(null);
   const avatarBlobRef = useRef(null);
@@ -1592,7 +1604,7 @@ const App = () => {
   const checkProfile = async (user) => {
     const { data } = await supabase.from('users').select('*').eq('id', user.id).single();
     if (data) {
-      setUserProfile({ name: data.name, birthDate: data.birth_date, gender: data.gender, avatarUrl: data.avatar_url || '' });
+      setUserProfile({ name: data.name, ageGroup: calculateAgeGroup(data.birth_date), gender: data.gender, avatarUrl: data.avatar_url || '' });
       setScreen('space');
     } else {
       // Googleアカウントの名前を初期値に
@@ -1629,7 +1641,7 @@ const App = () => {
     const { error } = await supabase.from('users').insert({
       id: authUser.id,
       name: userProfile.name,
-      birth_date: userProfile.birthDate,
+      birth_date: AGE_GROUP_TO_BIRTH_DATE[userProfile.ageGroup] || '2001-01-01',
       gender: userProfile.gender,
       avatar_url: authUser.user_metadata?.avatar_url || null,
       is_online: true,
@@ -2107,7 +2119,7 @@ const App = () => {
   };
 
   const openEditProfile = () => {
-    setEditForm({ name: userProfile.name, birthDate: userProfile.birthDate, gender: userProfile.gender });
+    setEditForm({ name: userProfile.name, ageGroup: userProfile.ageGroup, gender: userProfile.gender });
     setAvatarPreview(null);
     avatarBlobRef.current = null;
     setIsEditingProfile(true);
@@ -2143,11 +2155,11 @@ const App = () => {
         return;
       }
     }
-    const updateData = { name: editForm.name, birth_date: editForm.birthDate, gender: editForm.gender };
+    const updateData = { name: editForm.name, birth_date: AGE_GROUP_TO_BIRTH_DATE[editForm.ageGroup] || '2001-01-01', gender: editForm.gender };
     if (newAvatarUrl !== userProfile.avatarUrl) updateData.avatar_url = newAvatarUrl;
     const { error } = await supabase.from('users').update(updateData).eq('id', authUser.id);
     if (!error) {
-      setUserProfile({ name: editForm.name, birthDate: editForm.birthDate, gender: editForm.gender, avatarUrl: newAvatarUrl });
+      setUserProfile({ name: editForm.name, ageGroup: editForm.ageGroup, gender: editForm.gender, avatarUrl: newAvatarUrl });
       avatarBlobRef.current = null;
       setAvatarPreview(null);
       setIsEditingProfile(false);
@@ -2227,7 +2239,7 @@ const App = () => {
                   />
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-slate-800 truncate">{userProfile.name}</p>
-                    <p className="text-sm text-slate-500">{calculateAgeGroup(userProfile.birthDate)} · {userProfile.gender === 'male' ? '男性' : userProfile.gender === 'female' ? '女性' : userProfile.gender === 'other' ? 'その他' : '回答しない'}</p>
+                    <p className="text-sm text-slate-500">{userProfile.ageGroup} · {userProfile.gender === 'male' ? '男性' : userProfile.gender === 'female' ? '女性' : userProfile.gender === 'other' ? 'その他' : '回答しない'}</p>
                   </div>
                   <button onClick={openEditProfile} className="p-2 bg-white rounded-full shadow-sm text-sky-500 hover:bg-sky-50 transition">
                     <Edit2 size={18} />
@@ -2313,13 +2325,15 @@ const App = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-1">生年月日</label>
-                    <input
-                      type="date" required
-                      value={editForm.birthDate}
-                      onChange={e => setEditForm({ ...editForm, birthDate: e.target.value })}
+                    <label className="block text-sm font-medium text-slate-600 mb-1">年代</label>
+                    <select
+                      required
+                      value={editForm.ageGroup}
+                      onChange={e => setEditForm({ ...editForm, ageGroup: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400"
-                    />
+                    >
+                      {AGE_GROUPS.map(ag => <option key={ag} value={ag}>{ag}</option>)}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-600 mb-1">性別</label>
