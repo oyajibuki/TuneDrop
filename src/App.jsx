@@ -386,14 +386,38 @@ const LoginScreen = ({ onGoogleLogin, onLineLogin }) => {
 };
 
 // --- ProfileScreen ---
-const ProfileScreen = ({ userProfile, setUserProfile, onSubmit }) => (
+const ProfileScreen = ({ userProfile, setUserProfile, onSubmit, avatarBlobRef }) => {
+  const fileInputRef = useRef(null);
+  const [cropImage, setCropImage] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState(null);
+
+  return (
   <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-b from-sky-400 to-sky-200 text-white p-6">
     <h2 className="text-2xl font-bold mb-6 drop-shadow-md">あなたについて教えてください</h2>
     <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4 bg-white/20 p-6 rounded-2xl backdrop-blur-md shadow-lg">
       <div className="flex flex-col items-center mb-4">
-        <div className="w-24 h-24 bg-sky-100 rounded-full flex items-center justify-center text-sky-400 mb-2 border-4 border-white shadow-sm overflow-hidden relative">
-          <Camera size={32} />
+        <div className="relative">
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="w-24 h-24 bg-sky-100 rounded-full flex items-center justify-center text-sky-400 mb-2 border-4 border-white shadow-sm overflow-hidden relative cursor-pointer hover:brightness-90 transition"
+          >
+            {avatarPreview
+              ? <img src={avatarPreview} className="w-full h-full object-cover" alt="avatar" />
+              : <Camera size={32} />
+            }
+          </div>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="absolute bottom-2 right-0 bg-sky-500 text-white rounded-full p-1.5 shadow hover:bg-sky-600 transition"
+          >
+            <Camera size={14} />
+          </button>
         </div>
+        <input
+          ref={fileInputRef} type="file" accept="image/*" className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) { setCropImage(f); e.target.value = ''; } }}
+        />
       </div>
       <div>
         <label className="block text-sm text-sky-50 mb-1 font-medium">名前（ニックネームOK）</label>
@@ -435,8 +459,20 @@ const ProfileScreen = ({ userProfile, setUserProfile, onSubmit }) => (
         Wave Spaceへ
       </button>
     </form>
+    {cropImage && (
+      <AvatarCropModal
+        imageFile={cropImage}
+        onConfirm={blob => {
+          avatarBlobRef.current = blob;
+          setAvatarPreview(URL.createObjectURL(blob));
+          setCropImage(null);
+        }}
+        onCancel={() => setCropImage(null)}
+      />
+    )}
   </div>
-);
+  );
+};
 const SpaceScreen = ({
   drops, setDrops, camera, setCamera, now,
   myDropText, setMyDropText, myDropCooldown, handleMyDrop,
@@ -1642,15 +1678,27 @@ const App = () => {
   };
 
 
+  const profileAvatarBlobRef = useRef(null);
+
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
     if (!authUser) return;
+    let avatarUrl = authUser.user_metadata?.avatar_url || null;
+    if (profileAvatarBlobRef.current) {
+      const { error: upErr } = await supabase.storage
+        .from('avatars')
+        .upload(`${authUser.id}.jpg`, profileAvatarBlobRef.current, { upsert: true, contentType: 'image/jpeg' });
+      if (!upErr) {
+        const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(`${authUser.id}.jpg`);
+        avatarUrl = publicUrl + '?t=' + Date.now();
+      }
+    }
     const { error } = await supabase.from('users').insert({
       id: authUser.id,
       name: userProfile.name,
       birth_date: AGE_GROUP_TO_BIRTH_DATE[userProfile.ageGroup] || '2001-01-01',
       gender: userProfile.gender,
-      avatar_url: authUser.user_metadata?.avatar_url || null,
+      avatar_url: avatarUrl,
       is_online: true,
     });
     if (!error) setScreen('space');
@@ -2199,7 +2247,7 @@ const App = () => {
   return (
     <div className="font-sans antialiased w-full h-screen bg-sky-50 overflow-hidden relative">
       {screen === 'login'   && <LoginScreen onGoogleLogin={handleGoogleLogin} onLineLogin={handleLineLogin} />}
-      {screen === 'profile' && <ProfileScreen userProfile={userProfile} setUserProfile={setUserProfile} onSubmit={handleProfileSubmit} />}
+      {screen === 'profile' && <ProfileScreen userProfile={userProfile} setUserProfile={setUserProfile} onSubmit={handleProfileSubmit} avatarBlobRef={profileAvatarBlobRef} />}
       {screen === 'space'   && (
         <SpaceScreen
           drops={visibleDrops} setDrops={setDrops} camera={camera} setCamera={setCamera} now={now}
