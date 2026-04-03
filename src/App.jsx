@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import {
   Camera, MessageCircle, Settings, X, Heart, Flag, Ban, MoreVertical,
   Send, Clock, LogOut, CheckCircle, Trash2, Edit2, LogIn, Wind,
@@ -92,6 +93,22 @@ const SOUND_DEFS = {
   decline: (ctx) => {
     playTone(ctx, 440, 0.2, 'sine', 0.2);
     playTone(ctx, 330, 0.3, 'sine', 0.15, 0.18);
+  },
+  msgSend: (ctx) => {
+    // LINEの「ポン」に近い短くシャープな送信音
+    playTone(ctx, 1046.5, 0.04, 'sine', 0.35);
+    playTone(ctx, 1318.5, 0.07, 'sine', 0.2, 0.035);
+  },
+  msgReceive: (ctx) => {
+    // 少し柔らかい受信音
+    playTone(ctx, 880, 0.05, 'sine', 0.28);
+    playTone(ctx, 1046.5, 0.09, 'sine', 0.18, 0.045);
+  },
+  exit: (ctx) => {
+    // 退席: ふわっと下がる和音
+    playTone(ctx, 523.25, 0.3, 'sine', 0.22);
+    playTone(ctx, 392, 0.4, 'sine', 0.18, 0.12);
+    playTone(ctx, 261.63, 0.55, 'sine', 0.14, 0.28);
   },
 };
 
@@ -323,12 +340,12 @@ const SpaceScreen = ({
   const circOffsetRef = useRef({ x: 0, y: 0 });
   const circRafRef = useRef(null);
   const circFrameRef = useRef(0);
+  const circAngleRef = useRef(0); // ランダムウォーク方向
 
   useEffect(() => {
     if (!isCirculating) {
       if (circRafRef.current) cancelAnimationFrame(circRafRef.current);
       circRafRef.current = null;
-      // 停止時: 蓄積オフセットをcameraに反映してDOMリセット
       if (dropWrapRef.current) dropWrapRef.current.style.transform = '';
       if (circOffsetRef.current.x !== 0 || circOffsetRef.current.y !== 0) {
         setCamera(prev => ({
@@ -344,22 +361,29 @@ const SpaceScreen = ({
       if (lastTime !== null) {
         const dt = Math.min(ts - lastTime, 33);
         circFrameRef.current += dt;
-        const dx = 22 * dt / 1000; // 22 canvas units/sec
-        const dy = Math.sin(circFrameRef.current * 0.0008) * 9 * dt / 1000;
+        // ゆっくり方向を変えるランダムウォーク（同じ場所をループしない）
+        circAngleRef.current += Math.sin(circFrameRef.current * 0.00025) * 0.018;
+        const speed = 22; // canvas units/sec
+        const dx = Math.cos(circAngleRef.current) * speed * dt / 1000;
+        const dy = Math.sin(circAngleRef.current) * speed * dt / 1000;
         circOffsetRef.current.x += dx;
         circOffsetRef.current.y += dy;
         if (dropWrapRef.current) {
           dropWrapRef.current.style.transform =
             `translate(${-circOffsetRef.current.x}px, ${-circOffsetRef.current.y}px)`;
         }
-        // 600px超えたらReact cameraに同期してDOMオフセットリセット（トーラスラップ維持）
-        if (Math.abs(circOffsetRef.current.x) > 600) {
-          setCamera(prev => ({
-            x: (prev.x + circOffsetRef.current.x + CANVAS_SIZE) % CANVAS_SIZE,
-            y: (prev.y + circOffsetRef.current.y + CANVAS_SIZE) % CANVAS_SIZE,
-          }));
+        // 閾値超えたら flushSync でReact stateとDOM resetを同一フレームに強制コミット→スナップなし
+        if (Math.abs(circOffsetRef.current.x) > 500 || Math.abs(circOffsetRef.current.y) > 500) {
+          const snapX = circOffsetRef.current.x;
+          const snapY = circOffsetRef.current.y;
           circOffsetRef.current = { x: 0, y: 0 };
           if (dropWrapRef.current) dropWrapRef.current.style.transform = '';
+          flushSync(() => {
+            setCamera(prev => ({
+              x: (prev.x + snapX + CANVAS_SIZE) % CANVAS_SIZE,
+              y: (prev.y + snapY + CANVAS_SIZE) % CANVAS_SIZE,
+            }));
+          });
         }
       }
       lastTime = ts;
@@ -1444,7 +1468,7 @@ const App = () => {
   const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('tuneDropSound') !== 'false');
   const [bgmEnabled, setBgmEnabled] = useState(() => localStorage.getItem('tuneDropBgm') === 'true');
   const audioCtxRef = useRef(null);
-  const bgmNodesRef = useRef(null);
+  const bgmAudioRef = useRef(null);
   const soundEnabledRef = useRef(soundEnabled);
   soundEnabledRef.current = soundEnabled;
 
@@ -1735,9 +1759,11 @@ const App = () => {
     const channel = supabase.channel(`room:${currentRoomId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${currentRoomId}` },
         (payload) => {
+          const isMine = payload.new.user_id === authUserRef.current?.id;
+          if (!isMine && !payload.new.is_system) playSound('msgReceive');
           setMessages(prev => {
             if (prev.find(m => m.id === payload.new.id)) return prev;
-            return [...prev, { id: payload.new.id, text: payload.new.text, isMine: payload.new.user_id === authUser.id, isSystem: payload.new.is_system }];
+            return [...prev, { id: payload.new.id, text: payload.new.text, isMine, isSystem: payload.new.is_system }];
           });
         }
       )
@@ -1767,78 +1793,34 @@ const App = () => {
     }
   }, [myDropCooldown]);
 
-  // ─── BGM（風 + クリスタル + リバーブ）───
+  // ─── BGM（クラシック音楽: HTML Audio） ───
+  // 曲目: Satie - Gymnopédie No.1 / Bach - Cello Suite No.1 / Debussy - Clair de Lune
+  const BGM_TRACKS = [
+    { label: 'ジムノペディ (Satie)', url: 'https://upload.wikimedia.org/wikipedia/commons/e/e7/Gymnopedie_No._1.ogg' },
+    { label: 'チェロ組曲 (Bach)', url: 'https://upload.wikimedia.org/wikipedia/commons/f/fb/Bach_-_Cello_Suite_No._1_in_G_major%2C_BWV_1007_-_1._Prelude.ogg' },
+    { label: '亡き王女のためのパヴァーヌ (Ravel)', url: 'https://upload.wikimedia.org/wikipedia/commons/c/c0/Pavane_pour_une_infante_d%C3%A9funte.ogg' },
+  ];
+  const [bgmTrackIdx, setBgmTrackIdx] = useState(() => parseInt(localStorage.getItem('tuneDropBgmTrack') || '0'));
+
   useEffect(() => {
     if (!bgmEnabled) {
-      if (bgmNodesRef.current) {
-        try { bgmNodesRef.current.toStop.forEach(n => { try { n.stop(); } catch(e) {} }); bgmNodesRef.current.masterGain.disconnect(); } catch(e) {}
-        bgmNodesRef.current = null;
-      }
+      if (bgmAudioRef.current) { bgmAudioRef.current.pause(); bgmAudioRef.current = null; }
       return;
     }
-    try {
-      if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
-      if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
-      if (bgmNodesRef.current) { try { bgmNodesRef.current.toStop.forEach(n => { try { n.stop(); } catch(e) {} }); bgmNodesRef.current.masterGain.disconnect(); } catch(e) {} }
-      const ctx = audioCtxRef.current;
-      const toStop = [];
-
-      const masterGain = ctx.createGain();
-      masterGain.gain.setValueAtTime(0, ctx.currentTime);
-      masterGain.gain.linearRampToValueAtTime(0.07, ctx.currentTime + 4);
-      masterGain.connect(ctx.destination);
-
-      // リバーブ: ディレイフィードバックネットワーク
-      const d1 = ctx.createDelay(2.0); d1.delayTime.value = 0.37;
-      const d2 = ctx.createDelay(2.0); d2.delayTime.value = 0.53;
-      const fb1 = ctx.createGain(); fb1.gain.value = 0.3;
-      const fb2 = ctx.createGain(); fb2.gain.value = 0.26;
-      const rvbGain = ctx.createGain(); rvbGain.gain.value = 0.45;
-      d1.connect(fb1); fb1.connect(d2); d2.connect(fb2); fb2.connect(d1);
-      d1.connect(rvbGain); d2.connect(rvbGain); rvbGain.connect(masterGain);
-
-      // 風音: バンドパスフィルター掛けたホワイトノイズ
-      const bufLen = ctx.sampleRate * 4;
-      const noiseBuf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
-      const nd = noiseBuf.getChannelData(0);
-      for (let i = 0; i < bufLen; i++) nd[i] = Math.random() * 2 - 1;
-      const noiseNode = ctx.createBufferSource();
-      noiseNode.buffer = noiseBuf; noiseNode.loop = true;
-      const windBP = ctx.createBiquadFilter();
-      windBP.type = 'bandpass'; windBP.frequency.value = 480; windBP.Q.value = 0.5;
-      const windGain = ctx.createGain(); windGain.gain.value = 0.13;
-      const windLFO = ctx.createOscillator(); const windLFOG = ctx.createGain();
-      windLFO.frequency.value = 0.12; windLFOG.gain.value = 0.04;
-      windLFO.connect(windLFOG); windLFOG.connect(windGain.gain);
-      noiseNode.connect(windBP); windBP.connect(windGain); windGain.connect(d1); windGain.connect(masterGain);
-      noiseNode.start(); windLFO.start();
-      toStop.push(noiseNode, windLFO);
-
-      // 低域の土台: ごく柔らかいドローン
-      [110, 164.81].forEach((freq, i) => {
-        const osc = ctx.createOscillator(); const g = ctx.createGain();
-        osc.type = 'sine'; osc.frequency.value = freq + i * 0.18;
-        g.gain.value = 0.1; osc.connect(g); g.connect(masterGain); osc.start();
-        toStop.push(osc);
-      });
-
-      // 高域クリスタル音: リバーブ通しの輝く高音（C6, E6, G6）
-      [1046.5, 1318.5, 1567.98].forEach((freq, i) => {
-        const osc = ctx.createOscillator(); const g = ctx.createGain();
-        osc.type = 'sine'; osc.frequency.value = freq + i * 0.25;
-        const lfo = ctx.createOscillator(); const lfoG = ctx.createGain();
-        lfo.frequency.value = 0.18 + i * 0.06; lfoG.gain.value = 0.025;
-        lfo.connect(lfoG); lfoG.connect(g.gain);
-        g.gain.setValueAtTime(0, ctx.currentTime);
-        g.gain.linearRampToValueAtTime(0.038, ctx.currentTime + 3 + i * 1.5);
-        osc.connect(g); g.connect(d1); g.connect(d2);
-        osc.start(); lfo.start();
-        toStop.push(osc, lfo);
-      });
-
-      bgmNodesRef.current = { toStop, masterGain };
-    } catch(e) { console.warn('BGM error:', e); }
-  }, [bgmEnabled]);
+    const track = BGM_TRACKS[bgmTrackIdx] || BGM_TRACKS[0];
+    if (bgmAudioRef.current) { bgmAudioRef.current.pause(); bgmAudioRef.current = null; }
+    const audio = new Audio(track.url);
+    audio.loop = true;
+    audio.volume = 0.28;
+    bgmAudioRef.current = audio;
+    audio.play().catch(() => {
+      // autoplay blocked — silently disable
+      setBgmEnabled(false);
+      localStorage.setItem('tuneDropBgm', 'false');
+    });
+    return () => { audio.pause(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bgmEnabled, bgmTrackIdx]);
 
   // ─── 着信通知音（bot自動着信も含む全ての着信でトリガー）───
   useEffect(() => {
@@ -2039,18 +2021,22 @@ const App = () => {
     if (isBotRoom) {
       const myMsg = { id: `local-${Date.now()}`, text: chatInput, isMine: true, isSystem: false };
       setMessages(prev => [...prev, myMsg]); setChatInput('');
+      playSound('msgSend');
       setTimeout(() => {
         const reply = BOT_REPLIES[Math.floor(Math.random() * BOT_REPLIES.length)];
         setMessages(prev => [...prev, { id: `bot-${Date.now()}`, text: reply, isMine: false, isSystem: false }]);
+        playSound('msgReceive');
       }, 1000 + Math.random() * 2000);
       return;
     }
     if (!currentRoomId) return;
     await supabase.from('messages').insert({ room_id: currentRoomId, user_id: authUser.id, text: chatInput, is_system: false });
     setChatInput('');
+    playSound('msgSend');
   };
 
   const handleFadeOut = () => {
+    playSound('exit');
     setScreen('fade');
     setCurrentRoomId(null); setChatPartner(null);
     setIsBotRoom(false); setBotUser(null);
@@ -2219,6 +2205,17 @@ const App = () => {
                         <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${bgmEnabled ? 'left-5' : 'left-0.5'}`} />
                       </button>
                     </div>
+                    {bgmEnabled && (
+                      <div className="mt-2">
+                        <select
+                          value={bgmTrackIdx}
+                          onChange={e => { const v = parseInt(e.target.value); setBgmTrackIdx(v); localStorage.setItem('tuneDropBgmTrack', v); }}
+                          className="w-full bg-white border border-slate-200 rounded-xl p-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-400"
+                        >
+                          {BGM_TRACKS.map((t, i) => <option key={i} value={i}>{t.label}</option>)}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 </div>
 
