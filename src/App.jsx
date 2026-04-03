@@ -84,6 +84,15 @@ const SOUND_DEFS = {
     playTone(ctx, 523, 0.3, 'sine', 0.2, 0.15);
     playTone(ctx, 659, 0.5, 'sine', 0.2, 0.3);
   },
+  accept: (ctx) => {
+    playTone(ctx, 523, 0.15, 'sine', 0.25);
+    playTone(ctx, 659, 0.15, 'sine', 0.22, 0.12);
+    playTone(ctx, 784, 0.4, 'sine', 0.2, 0.25);
+  },
+  decline: (ctx) => {
+    playTone(ctx, 440, 0.2, 'sine', 0.2);
+    playTone(ctx, 330, 0.3, 'sine', 0.15, 0.18);
+  },
 };
 
 const generateBotDrops = (countPerBot = 8) => {
@@ -309,6 +318,57 @@ const SpaceScreen = ({
   scaleRef.current = scale;
   cameraRef.current = camera;
 
+  // 巡回: RAF + 直接DOM操作（Reactを介さないので滑らか）
+  const dropWrapRef = useRef(null);
+  const circOffsetRef = useRef({ x: 0, y: 0 });
+  const circRafRef = useRef(null);
+  const circFrameRef = useRef(0);
+
+  useEffect(() => {
+    if (!isCirculating) {
+      if (circRafRef.current) cancelAnimationFrame(circRafRef.current);
+      circRafRef.current = null;
+      // 停止時: 蓄積オフセットをcameraに反映してDOMリセット
+      if (dropWrapRef.current) dropWrapRef.current.style.transform = '';
+      if (circOffsetRef.current.x !== 0 || circOffsetRef.current.y !== 0) {
+        setCamera(prev => ({
+          x: (prev.x + circOffsetRef.current.x + CANVAS_SIZE) % CANVAS_SIZE,
+          y: (prev.y + circOffsetRef.current.y + CANVAS_SIZE) % CANVAS_SIZE,
+        }));
+        circOffsetRef.current = { x: 0, y: 0 };
+      }
+      return;
+    }
+    let lastTime = null;
+    const step = (ts) => {
+      if (lastTime !== null) {
+        const dt = Math.min(ts - lastTime, 33);
+        circFrameRef.current += dt;
+        const dx = 22 * dt / 1000; // 22 canvas units/sec
+        const dy = Math.sin(circFrameRef.current * 0.0008) * 9 * dt / 1000;
+        circOffsetRef.current.x += dx;
+        circOffsetRef.current.y += dy;
+        if (dropWrapRef.current) {
+          dropWrapRef.current.style.transform =
+            `translate(${-circOffsetRef.current.x}px, ${-circOffsetRef.current.y}px)`;
+        }
+        // 600px超えたらReact cameraに同期してDOMオフセットリセット（トーラスラップ維持）
+        if (Math.abs(circOffsetRef.current.x) > 600) {
+          setCamera(prev => ({
+            x: (prev.x + circOffsetRef.current.x + CANVAS_SIZE) % CANVAS_SIZE,
+            y: (prev.y + circOffsetRef.current.y + CANVAS_SIZE) % CANVAS_SIZE,
+          }));
+          circOffsetRef.current = { x: 0, y: 0 };
+          if (dropWrapRef.current) dropWrapRef.current.style.transform = '';
+        }
+      }
+      lastTime = ts;
+      circRafRef.current = requestAnimationFrame(step);
+    };
+    circRafRef.current = requestAnimationFrame(step);
+    return () => { if (circRafRef.current) cancelAnimationFrame(circRafRef.current); };
+  }, [isCirculating, setCamera]);
+
   useEffect(() => { setShowMenu(false); }, [selectedDrop]);
 
   useEffect(() => {
@@ -469,6 +529,7 @@ const SpaceScreen = ({
         style={{ cursor: isDragging && !draggingDropId ? 'grabbing' : 'grab' }}
       >
         <div className="absolute inset-0 origin-center" style={{ transform: `scale(${scale})`, transition: isDragging || draggingDropId ? 'none' : 'transform 0.15s ease-out' }}>
+          <div ref={dropWrapRef} className="absolute inset-0">
           {drops.map(drop => {
             const age = now - drop.createdAt;
             const lifeRatio = Math.max(0, 1 - age / DROP_LIFETIME);
@@ -533,6 +594,7 @@ const SpaceScreen = ({
               </div>
             );
           })}
+          </div>
         </div>
       </div>
 
@@ -1385,7 +1447,6 @@ const App = () => {
   const bgmNodesRef = useRef(null);
   const soundEnabledRef = useRef(soundEnabled);
   soundEnabledRef.current = soundEnabled;
-  const circulationFrameRef = useRef(0);
 
   const authUserRef = useRef(null);
   authUserRef.current = authUser;
@@ -1654,7 +1715,6 @@ const App = () => {
             roomId: room.id,
             isBot: false,
           });
-          playSound('incoming');
         }
       )
       .subscribe();
@@ -1707,24 +1767,11 @@ const App = () => {
     }
   }, [myDropCooldown]);
 
-  // ─── 巡回モード ───
-  useEffect(() => {
-    if (!isCirculating || screen !== 'space') return;
-    const id = setInterval(() => {
-      circulationFrameRef.current++;
-      setCamera(prev => ({
-        x: (prev.x + 0.8 + CANVAS_SIZE) % CANVAS_SIZE,
-        y: (prev.y + Math.sin(circulationFrameRef.current * 0.015) * 0.4 + CANVAS_SIZE) % CANVAS_SIZE,
-      }));
-    }, 50);
-    return () => clearInterval(id);
-  }, [isCirculating, screen]);
-
-  // ─── BGM ───
+  // ─── BGM（風 + クリスタル + リバーブ）───
   useEffect(() => {
     if (!bgmEnabled) {
       if (bgmNodesRef.current) {
-        try { bgmNodesRef.current.oscs.forEach(o => o.stop()); bgmNodesRef.current.masterGain.disconnect(); } catch(e) {}
+        try { bgmNodesRef.current.toStop.forEach(n => { try { n.stop(); } catch(e) {} }); bgmNodesRef.current.masterGain.disconnect(); } catch(e) {}
         bgmNodesRef.current = null;
       }
       return;
@@ -1732,23 +1779,72 @@ const App = () => {
     try {
       if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
       if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
-      if (bgmNodesRef.current) { try { bgmNodesRef.current.oscs.forEach(o => o.stop()); bgmNodesRef.current.masterGain.disconnect(); } catch(e) {} }
+      if (bgmNodesRef.current) { try { bgmNodesRef.current.toStop.forEach(n => { try { n.stop(); } catch(e) {} }); bgmNodesRef.current.masterGain.disconnect(); } catch(e) {} }
       const ctx = audioCtxRef.current;
+      const toStop = [];
+
       const masterGain = ctx.createGain();
-      masterGain.gain.value = 0.04;
-      const filter = ctx.createBiquadFilter();
-      filter.type = 'lowpass'; filter.frequency.value = 800;
-      masterGain.connect(filter); filter.connect(ctx.destination);
-      const oscs = [110, 164.81, 220, 329.63].map((freq, i) => {
-        const osc = ctx.createOscillator();
-        osc.type = 'sine'; osc.frequency.value = freq + i * 0.3;
-        const g = ctx.createGain(); g.gain.value = 0.25;
-        osc.connect(g); g.connect(masterGain); osc.start();
-        return osc;
+      masterGain.gain.setValueAtTime(0, ctx.currentTime);
+      masterGain.gain.linearRampToValueAtTime(0.07, ctx.currentTime + 4);
+      masterGain.connect(ctx.destination);
+
+      // リバーブ: ディレイフィードバックネットワーク
+      const d1 = ctx.createDelay(2.0); d1.delayTime.value = 0.37;
+      const d2 = ctx.createDelay(2.0); d2.delayTime.value = 0.53;
+      const fb1 = ctx.createGain(); fb1.gain.value = 0.3;
+      const fb2 = ctx.createGain(); fb2.gain.value = 0.26;
+      const rvbGain = ctx.createGain(); rvbGain.gain.value = 0.45;
+      d1.connect(fb1); fb1.connect(d2); d2.connect(fb2); fb2.connect(d1);
+      d1.connect(rvbGain); d2.connect(rvbGain); rvbGain.connect(masterGain);
+
+      // 風音: バンドパスフィルター掛けたホワイトノイズ
+      const bufLen = ctx.sampleRate * 4;
+      const noiseBuf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+      const nd = noiseBuf.getChannelData(0);
+      for (let i = 0; i < bufLen; i++) nd[i] = Math.random() * 2 - 1;
+      const noiseNode = ctx.createBufferSource();
+      noiseNode.buffer = noiseBuf; noiseNode.loop = true;
+      const windBP = ctx.createBiquadFilter();
+      windBP.type = 'bandpass'; windBP.frequency.value = 480; windBP.Q.value = 0.5;
+      const windGain = ctx.createGain(); windGain.gain.value = 0.13;
+      const windLFO = ctx.createOscillator(); const windLFOG = ctx.createGain();
+      windLFO.frequency.value = 0.12; windLFOG.gain.value = 0.04;
+      windLFO.connect(windLFOG); windLFOG.connect(windGain.gain);
+      noiseNode.connect(windBP); windBP.connect(windGain); windGain.connect(d1); windGain.connect(masterGain);
+      noiseNode.start(); windLFO.start();
+      toStop.push(noiseNode, windLFO);
+
+      // 低域の土台: ごく柔らかいドローン
+      [110, 164.81].forEach((freq, i) => {
+        const osc = ctx.createOscillator(); const g = ctx.createGain();
+        osc.type = 'sine'; osc.frequency.value = freq + i * 0.18;
+        g.gain.value = 0.1; osc.connect(g); g.connect(masterGain); osc.start();
+        toStop.push(osc);
       });
-      bgmNodesRef.current = { oscs, masterGain };
+
+      // 高域クリスタル音: リバーブ通しの輝く高音（C6, E6, G6）
+      [1046.5, 1318.5, 1567.98].forEach((freq, i) => {
+        const osc = ctx.createOscillator(); const g = ctx.createGain();
+        osc.type = 'sine'; osc.frequency.value = freq + i * 0.25;
+        const lfo = ctx.createOscillator(); const lfoG = ctx.createGain();
+        lfo.frequency.value = 0.18 + i * 0.06; lfoG.gain.value = 0.025;
+        lfo.connect(lfoG); lfoG.connect(g.gain);
+        g.gain.setValueAtTime(0, ctx.currentTime);
+        g.gain.linearRampToValueAtTime(0.038, ctx.currentTime + 3 + i * 1.5);
+        osc.connect(g); g.connect(d1); g.connect(d2);
+        osc.start(); lfo.start();
+        toStop.push(osc, lfo);
+      });
+
+      bgmNodesRef.current = { toStop, masterGain };
     } catch(e) { console.warn('BGM error:', e); }
   }, [bgmEnabled]);
+
+  // ─── 着信通知音（bot自動着信も含む全ての着信でトリガー）───
+  useEffect(() => {
+    if (incomingRequest) playSound('incoming');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incomingRequest]);
 
   // ─── 効果音 ───
   const playSound = (type) => {
@@ -1908,6 +2004,7 @@ const App = () => {
 
   const handleAcceptRequest = async () => {
     if (!incomingRequest) return;
+    playSound('accept');
     if (incomingRequest.isBot) {
       const bot = BOT_USERS.find(b => b.id === incomingRequest.partner.userId);
       setBotUser(bot || null); setIsBotRoom(true);
@@ -1927,6 +2024,7 @@ const App = () => {
     if (incomingRequest && incomingRequest.roomId) {
       await supabase.from('rooms').update({ status: 'declined' }).eq('id', incomingRequest.roomId);
     }
+    playSound('decline');
     setIncomingRequest(null);
   };
 
