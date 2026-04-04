@@ -1956,7 +1956,10 @@ const App = () => {
       const realDrops = data ? data.map(d => toLocalDrop(d, authUser.id)) : [];
       const realUsers = countRealUsers(realDrops);
       const botSlots = Math.max(0, MAX_WAVE_DROPS - realUsers);
-      setDrops([...realDrops, ...generateBotDrops(botSlots)]);
+      setDrops(prev => {
+        const liveTunes = prev.filter(isLiveTune); // ライブTuneを保持
+        return [...realDrops, ...generateBotDrops(botSlots), ...liveTunes];
+      });
     };
     loadDrops();
 
@@ -2283,6 +2286,7 @@ const App = () => {
 
   // ─── ライブドロップを drops に反映（8種）───
   useEffect(() => {
+    if (screen !== 'space') return; // space 以外では何もしない
     const { feeds, usdJpy, weather, btc, quote } = liveData;
     // quote は JP_QUOTES から常にセットされるので hasAny は必ず true になる
     const hasAny = Object.values(feeds).some(f => f.length > 0) || usdJpy != null || weather != null || btc != null || quote != null;
@@ -2318,7 +2322,7 @@ const App = () => {
       if (quote)               live.push(mk('live-quote',  '💬 今日の一言',         { isQuote:true, quoteData:quote, userName:'ことわざ', ageGroup:'名言' }, 7, 'hsla(320,50%,90%,0.95)', 2));
       return [...filtered, ...live];
     });
-  }, [liveData]);
+  }, [liveData, screen]);
 
   // ─── 着信通知音（bot自動着信も含む全ての着信でトリガー）───
   useEffect(() => {
