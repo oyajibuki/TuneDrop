@@ -584,7 +584,7 @@ const SpaceScreen = ({
   dropMedia, setDropMedia, dropMediaInputRef,
   scale, setScale, isUploading,
   isCirculating, onToggleCirculate,
-  realCount, botCount,
+  realUsers, realTunes, botTunes,
 }) => {
   const [isWinding, setIsWinding] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -1079,10 +1079,11 @@ const SpaceScreen = ({
         style={{ bottom: 'calc(2rem + env(safe-area-inset-bottom))' }}
         onPointerDown={stopPropagation} onPointerMove={stopPropagation} onPointerUp={stopPropagation}
       >
-        {/* ステータス表示（右下） */}
-        <div className="absolute right-0 -top-7 flex items-center gap-2 text-[11px] text-slate-400/80 pointer-events-none select-none">
-          <span>〇 {realCount}</span>
-          <span>▼ {botCount}</span>
+        {/* ステータス表示（右下）人数・リアルTune・BOT Tune */}
+        <div className="absolute right-0 -top-7 flex items-center gap-2.5 text-[11px] text-slate-400/80 pointer-events-none select-none">
+          <span title="オンラインユーザー数">〇 {realUsers}</span>
+          <span title="リアルユーザーのTune数">✦ {realTunes}</span>
+          <span title="BOT Tune数">▼ {botTunes}</span>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
@@ -1794,6 +1795,8 @@ const App = () => {
 
   // ライブデータ（ニュース4種・為替・天気・BTC・名言）
   const [liveData, setLiveData] = useState({ feeds: { nhk: [], yahoo: [], hatena: [], tech: [] }, usdJpy: null, weather: null, btc: null, quote: null });
+  // オンライン統計（リアルユーザー数・リアルTune数・BOT Tune数）
+  const [onlineStats, setOnlineStats] = useState({ users: 0, realTunes: 0 });
 
   // 巡回・サウンド設定
   const [isCirculating, setIsCirculating] = useState(false);
@@ -2034,11 +2037,50 @@ const App = () => {
       });
     }, 5 * 60 * 1000);
 
+    // ── オンラインユーザー数を取得 ──
+    const fetchOnlineStats = async () => {
+      const { data: onlineUsers } = await supabase
+        .from('users')
+        .select('id')
+        .eq('is_online', true);
+      const onlineIds = new Set((onlineUsers || []).map(u => u.id));
+      setOnlineStats({
+        users: onlineIds.size,
+        realTunes: drops.filter(d => isRealDrop(d) && onlineIds.has(d.userId)).length,
+      });
+    };
+    fetchOnlineStats();
+
+    // usersテーブルの is_online 変化をリアルタイム監視
+    const usersChannel = supabase.channel('online-users-watch')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users' },
+        () => fetchOnlineStats()
+      ).subscribe();
+
+    // ハートビート: 5分ごとに自分の is_online を更新（ブラウザ落ちによる残留を防止）
+    const heartbeat = setInterval(async () => {
+      if (authUser) await supabase.from('users').update({ is_online: true }).eq('id', authUser.id);
+      fetchOnlineStats();
+    }, 5 * 60 * 1000);
+
+    // ページを閉じたとき is_online=false
+    const handleBeforeUnload = () => {
+      if (authUser) {
+        navigator.sendBeacon
+          ? navigator.sendBeacon(`https://fikijrghktqilpxqoyvw.supabase.co/rest/v1/users?id=eq.${authUser.id}`, JSON.stringify({ is_online: false }))
+          : supabase.from('users').update({ is_online: false }).eq('id', authUser.id);
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(usersChannel);
       clearInterval(timer);
       clearInterval(physicsTimer);
       clearInterval(botTimer);
+      clearInterval(heartbeat);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [screen, authUser]);
 
@@ -2607,7 +2649,11 @@ const App = () => {
     }
   };
 
-  const handleLogout = async () => { await supabase.auth.signOut(); setScreen('login'); setDrops([]); };
+  const handleLogout = async () => {
+    if (authUser) await supabase.from('users').update({ is_online: false }).eq('id', authUser.id);
+    await supabase.auth.signOut();
+    setScreen('login'); setDrops([]);
+  };
 
   const handleDeleteAccount = async () => {
     if (!authUser) return;
@@ -2643,8 +2689,9 @@ const App = () => {
           dropMedia={dropMedia} setDropMedia={setDropMedia} dropMediaInputRef={dropMediaInputRef}
           isUploading={isUploading}
           isCirculating={isCirculating} onToggleCirculate={() => setIsCirculating(v => !v)}
-          realCount={new Set(drops.filter(isRealDrop).map(d => d.userId)).size}
-          botCount={drops.filter(isBotDrop).length}
+          realUsers={onlineStats.users}
+          realTunes={onlineStats.realTunes}
+          botTunes={drops.filter(isBotDrop).length}
         />
       )}
       {screen === 'room'    && (
