@@ -167,21 +167,21 @@ const generateBotDrops = (countPerBot = 8) => {
   const gameAds = [
     {
       id: 'ad-powasaba',
-      text: '🏔️ ポワサバ\n極寒の地でクランを率いて生き残れ！',
+      text: '🏔️ ポワサバ\nブラウザで遊べる無料サバイバル！',
       lpLink: 'https://oyajibuki.github.io/tools/powa/?lang=ja',
       link: 'https://oyajibuki.github.io/whiteout-survival/',
       color: 'hsla(210, 80%, 88%, 0.95)',
     },
     {
       id: 'ad-armyrush',
-      text: '⚔️ アーミーラッシュ\n軍を指揮して戦場を制圧せよ！',
+      text: '⚔️ アーミーラッシュ\n圧倒的な自軍で敵を一斉掃射！',
       lpLink: 'https://oyajibuki.github.io/tools/army/',
       link: 'https://oyajibuki.github.io/Army/',
       color: 'hsla(140, 60%, 85%, 0.95)',
     },
     {
       id: 'ad-katana',
-      text: '🗡️ Katana\n刀で斬り拓く、爽快アクション！',
+      text: '🗡️ Katana\n刀一本で敵を斬り倒すブラウザアクションRPG！',
       lpLink: 'https://oyajibuki.github.io/tools/katana/',
       link: 'https://oyajibuki.github.io/katana/',
       color: 'hsla(0, 60%, 88%, 0.95)',
