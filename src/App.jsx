@@ -1939,12 +1939,17 @@ const App = () => {
     if (screen !== 'space' || !authUser) return;
     let channel;
 
+    // ユニークなリアルユーザー数を数える（Drop数ではなく人数）
+    const countRealUsers = (dropList) =>
+      new Set(dropList.filter(isRealDrop).map(d => d.userId)).size;
+
     const loadDrops = async () => {
       const { data } = await supabase
         .from('drops')
         .select('*, users(name, avatar_url, is_online, birth_date)');
       const realDrops = data ? data.map(d => toLocalDrop(d, authUser.id)) : [];
-      const botSlots = Math.max(0, MAX_WAVE_DROPS - realDrops.length);
+      const realUsers = countRealUsers(realDrops);
+      const botSlots = Math.max(0, MAX_WAVE_DROPS - realUsers);
       setDrops([...realDrops, ...generateBotDrops(botSlots)]);
     };
     loadDrops();
@@ -1960,9 +1965,8 @@ const App = () => {
         const newDrop = toLocalDrop(data, authUserRef.current?.id);
         setDrops(prev => {
           if (prev.find(d => d.id === newDrop.id)) return prev;
-          const realCount = prev.filter(isRealDrop).length + 1;
-          const botSlots = Math.max(0, MAX_WAVE_DROPS - realCount);
-          // BOTを1個押し出す（末尾から削除）
+          const realUsers = countRealUsers([...prev, newDrop]);
+          const botSlots = Math.max(0, MAX_WAVE_DROPS - realUsers);
           const botDrops = prev.filter(isBotDrop);
           const keptBots = botDrops.slice(0, botSlots);
           const rest = prev.filter(d => !isBotDrop(d));
@@ -2020,11 +2024,11 @@ const App = () => {
       });
     }, 1500);
     
-    // 5分おきにBOT補充（リアルUser数に応じて調整）
+    // 5分おきにBOT補充（リアルユーザー人数に応じて調整）
     const botTimer = setInterval(() => {
       setDrops(prev => {
-        const realDrops = prev.filter(isRealDrop);
-        const botSlots = Math.max(0, MAX_WAVE_DROPS - realDrops.length);
+        const realUsers = countRealUsers(prev);
+        const botSlots = Math.max(0, MAX_WAVE_DROPS - realUsers);
         const nonBot = prev.filter(d => !isBotDrop(d));
         return [...nonBot, ...generateBotDrops(botSlots)];
       });
@@ -2639,7 +2643,7 @@ const App = () => {
           dropMedia={dropMedia} setDropMedia={setDropMedia} dropMediaInputRef={dropMediaInputRef}
           isUploading={isUploading}
           isCirculating={isCirculating} onToggleCirculate={() => setIsCirculating(v => !v)}
-          realCount={drops.filter(isRealDrop).length}
+          realCount={new Set(drops.filter(isRealDrop).map(d => d.userId)).size}
           botCount={drops.filter(isBotDrop).length}
         />
       )}
