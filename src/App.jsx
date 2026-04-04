@@ -738,6 +738,10 @@ const SpaceScreen = ({
                   <div className="relative">
                     {drop.isGameAd
                       ? <div className="w-12 h-12 rounded-full border-2 border-white shadow-sm bg-blue-50 flex items-center justify-center text-2xl pointer-events-none">🎮</div>
+                      : drop.isNewsTune
+                      ? <div className="w-12 h-12 rounded-full border-2 border-white shadow-sm bg-blue-100 flex items-center justify-center text-2xl pointer-events-none">📰</div>
+                      : drop.isMarket
+                      ? <div className="w-12 h-12 rounded-full border-2 border-white shadow-sm bg-emerald-50 flex items-center justify-center text-2xl pointer-events-none">{drop.ageGroup === '為替' ? '💱' : '📈'}</div>
                       : <img src={drop.avatar} alt="avatar" className="w-12 h-12 rounded-full border-2 border-white object-cover shadow-sm pointer-events-none" draggable="false" />
                     }
                     <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${drop.isOnline ? 'bg-green-500' : 'bg-slate-400'}`}></span>
@@ -772,6 +776,16 @@ const SpaceScreen = ({
                     🎮 GAME
                   </span>
                 )}
+                {drop.isNewsTune && (
+                  <span className="absolute -top-4 -left-2 bg-blue-400 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm z-10 pointer-events-none">
+                    📰 NEWS
+                  </span>
+                )}
+                {drop.isMarket && (
+                  <span className="absolute -top-4 -left-2 bg-emerald-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm z-10 pointer-events-none">
+                    {drop.ageGroup === '為替' ? '💱' : '📈'} LIVE
+                  </span>
+                )}
               </div>
             );
           })}
@@ -802,6 +816,10 @@ const SpaceScreen = ({
           )}
           {selectedDrop.isGameAd
             ? <div className="w-20 h-20 rounded-full mb-3 border-4 border-blue-100 shadow-inner flex items-center justify-center text-4xl bg-blue-50">🎮</div>
+            : selectedDrop.isNewsTune
+            ? <div className="w-20 h-20 rounded-full mb-3 border-4 border-blue-100 shadow-inner flex items-center justify-center text-4xl bg-blue-50">📰</div>
+            : selectedDrop.isMarket
+            ? <div className="w-20 h-20 rounded-full mb-3 border-4 border-emerald-100 shadow-inner flex items-center justify-center text-4xl bg-emerald-50">{selectedDrop.ageGroup === '為替' ? '💱' : '📈'}</div>
             : <img src={selectedDrop.avatar} className="w-20 h-20 rounded-full mb-3 border-4 border-sky-100 shadow-inner object-cover" alt="avatar" />
           }
           <div className="flex flex-col items-center mb-4">
@@ -811,6 +829,31 @@ const SpaceScreen = ({
             </span>
           </div>
           <p className="text-xl font-bold mb-4 text-slate-800 text-center whitespace-pre-wrap">"{selectedDrop.text}"</p>
+          {selectedDrop.isNewsTune && selectedDrop.currentNewsItem && (
+            <div className="w-full flex flex-col gap-2 mb-4">
+              <p className="text-sm text-slate-700 font-medium leading-snug text-center px-2">
+                {selectedDrop.currentNewsItem.title}
+              </p>
+              <a href={selectedDrop.currentNewsItem.link} target="_blank" rel="noopener noreferrer"
+                className="w-full py-3 bg-gradient-to-r from-blue-500 to-sky-400 text-white rounded-2xl flex items-center justify-center font-bold hover:opacity-90 transition shadow-md">
+                📰 記事を読む →
+              </a>
+              <button
+                onClick={() => {
+                  const item = liveData.news[Math.floor(Math.random() * liveData.news.length)];
+                  setSelectedDrop(prev => ({ ...prev, currentNewsItem: item }));
+                }}
+                className="w-full py-2 bg-slate-100 text-slate-500 rounded-2xl text-sm hover:bg-slate-200 transition">
+                別のニュースを見る
+              </button>
+            </div>
+          )}
+          {selectedDrop.isMarket && (
+            <div className="w-full mb-4 py-4 bg-slate-50 rounded-2xl text-center text-slate-500 text-sm">
+              {selectedDrop.ageGroup === '為替' ? '💱 リアルタイム為替データ' : '📈 株価データ'}
+              <p className="text-xs mt-1 text-slate-400">15分ごとに更新</p>
+            </div>
+          )}
           {selectedDrop.isGameAd && selectedDrop.link && (
             <div className="w-full flex flex-col gap-2 mb-4">
               <a href={selectedDrop.link} target="_blank" rel="noopener noreferrer" className="w-full py-3 bg-gradient-to-r from-sky-500 to-blue-500 text-white rounded-2xl flex items-center justify-center font-bold hover:opacity-90 transition shadow-md">
@@ -839,7 +882,7 @@ const SpaceScreen = ({
              </div>
           )}
 
-          {!selectedDrop.isAd && (
+          {!selectedDrop.isAd && !selectedDrop.isNewsTune && !selectedDrop.isMarket && (
             selectedDrop.isMine ? (
               <button onClick={() => handleDeleteDrop(selectedDrop.id)} className="w-full py-3.5 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center gap-2 hover:bg-rose-100 transition font-bold shadow-sm">
                 Dropを取り消す
@@ -1636,6 +1679,9 @@ const App = () => {
   const [isBotRoom, setIsBotRoom] = useState(false);
   const [botUser, setBotUser] = useState(null);
 
+  // ライブデータ（ニュース・為替・株価）
+  const [liveData, setLiveData] = useState({ news: [], usdJpy: null, nikkei: null });
+
   // 巡回・サウンド設定
   const [isCirculating, setIsCirculating] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('tuneDropSound') !== 'false');
@@ -2044,6 +2090,104 @@ const App = () => {
     return () => { audio.pause(); };
   }, [bgmEnabled]);
 
+  // ─── ライブデータ取得（ニュース RSS・為替・日経平均）───
+  useEffect(() => {
+    if (screen !== 'space' || !authUser) return;
+    const RSS_FEEDS = [
+      'https://www3.nhk.or.jp/rss/news/cat0.xml',
+      'https://news.yahoo.co.jp/rss/topics/top-picks.xml',
+      'https://b.hatena.ne.jp/hotentry.rss',
+      'https://jp.techcrunch.com/feed/',
+    ];
+    const fetchAll = async () => {
+      // ── ニュース RSS ──
+      const newsItems = [];
+      for (const feed of RSS_FEEDS) {
+        try {
+          const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(feed)}`);
+          const text = await res.text();
+          const xml = new DOMParser().parseFromString(text, 'text/xml');
+          const items = [...xml.querySelectorAll('item')].slice(0, 5);
+          items.forEach(item => {
+            const title = item.querySelector('title')?.textContent?.replace(/<!\[CDATA\[|\]\]>/g, '').trim();
+            const link = item.querySelector('link')?.textContent?.trim()
+              || item.querySelector('guid')?.textContent?.trim();
+            if (title && link) newsItems.push({ title, link });
+          });
+        } catch(e) {}
+      }
+      // ── USD/JPY ──
+      let usdJpy = null;
+      try {
+        const res = await fetch('https://open.er-api.com/v6/latest/USD');
+        const data = await res.json();
+        usdJpy = data.rates?.JPY ?? null;
+      } catch(e) {}
+      // ── 日経平均 ──
+      let nikkei = null;
+      try {
+        const res = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EN225?interval=1d&range=1d', { headers: { 'Accept': 'application/json' } });
+        const data = await res.json();
+        nikkei = data.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
+      } catch(e) {}
+
+      setLiveData({ news: newsItems, usdJpy, nikkei });
+    };
+    fetchAll();
+    // 15分ごとに更新
+    const interval = setInterval(fetchAll, 15 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [screen, authUser]);
+
+  // ─── ライブドロップを drops に反映 ───
+  useEffect(() => {
+    const { news, usdJpy, nikkei } = liveData;
+    if (!news.length && usdJpy === null && nikkei === null) return;
+    const baseX = (i) => [CANVAS_SIZE * 0.25, CANVAS_SIZE * 0.55, CANVAS_SIZE * 0.75, CANVAS_SIZE * 0.4][i] ?? Math.random() * CANVAS_SIZE;
+    const baseY = (i) => [CANVAS_SIZE * 0.35, CANVAS_SIZE * 0.65, CANVAS_SIZE * 0.45, CANVAS_SIZE * 0.7][i] ?? Math.random() * CANVAS_SIZE;
+    setDrops(prev => {
+      const filtered = prev.filter(d => !d.isNewsTune && !d.isMarket);
+      const live = [];
+      if (news.length > 0) {
+        live.push({
+          id: 'live-news', text: '📰 ニュース',
+          isNewsTune: true, isBot: true, isAd: false,
+          color: 'hsla(220, 70%, 90%, 0.95)',
+          x: baseX(0), y: baseY(0), animType: 2, animDelay: -1,
+          isMine: false, isOnline: true, likes: 0, likedByMe: false,
+          createdAt: Date.now(),
+          userName: 'TuneDrop News', ageGroup: 'ニュース',
+          avatar: null, mediaUrl: null,
+        });
+      }
+      if (usdJpy !== null) {
+        live.push({
+          id: 'live-usdjpy', text: `💱 ドル円\n${usdJpy.toFixed(2)} 円`,
+          isMarket: true, isBot: true, isAd: false,
+          color: 'hsla(145, 55%, 87%, 0.95)',
+          x: baseX(1), y: baseY(1), animType: 1, animDelay: -2,
+          isMine: false, isOnline: true, likes: 0, likedByMe: false,
+          createdAt: Date.now(),
+          userName: 'Market', ageGroup: '為替',
+          avatar: null, mediaUrl: null,
+        });
+      }
+      if (nikkei !== null) {
+        live.push({
+          id: 'live-nikkei', text: `📈 日経平均\n${Math.round(nikkei).toLocaleString()}`,
+          isMarket: true, isBot: true, isAd: false,
+          color: 'hsla(35, 75%, 87%, 0.95)',
+          x: baseX(2), y: baseY(2), animType: 3, animDelay: -1.5,
+          isMine: false, isOnline: true, likes: 0, likedByMe: false,
+          createdAt: Date.now(),
+          userName: 'Market', ageGroup: '株価',
+          avatar: null, mediaUrl: null,
+        });
+      }
+      return [...filtered, ...live];
+    });
+  }, [liveData]);
+
   // ─── 着信通知音（bot自動着信も含む全ての着信でトリガー）───
   useEffect(() => {
     if (incomingRequest) playSound('incoming');
@@ -2140,7 +2284,14 @@ const App = () => {
     }
   };
 
-  const handleCatch = (drop) => setSelectedDrop(drop);
+  const handleCatch = (drop) => {
+    if (drop.isNewsTune && liveData.news.length > 0) {
+      const item = liveData.news[Math.floor(Math.random() * liveData.news.length)];
+      setSelectedDrop({ ...drop, currentNewsItem: item });
+    } else {
+      setSelectedDrop(drop);
+    }
+  };
 
   const handleDeleteDrop = async (id) => {
     await supabase.from('drops').delete().eq('id', id);
