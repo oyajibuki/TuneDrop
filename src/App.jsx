@@ -923,14 +923,14 @@ const SpaceScreen = ({
               <span className="text-5xl">{selectedDrop.weatherData.emoji}</span>
               <p className="text-2xl font-bold text-slate-700 mt-1">{selectedDrop.weatherData.temp}℃</p>
               <p className="text-sm text-slate-500">{selectedDrop.weatherData.desc}</p>
-              <p className="text-xs text-slate-400 mt-1">東京 / 更新 {selectedDrop.weatherData?.updatedAt ? toJST(selectedDrop.weatherData.updatedAt) : '--:--'} JST</p>
+              <p className="text-xs text-slate-400 mt-1">東京 / 15分ごと更新</p>
             </div>
           )}
           {selectedDrop.isBtc && (
             <div className="w-full mb-4 py-5 bg-orange-50 rounded-2xl text-center flex flex-col items-center gap-1">
               <span className="text-4xl">₿</span>
               <p className="text-2xl font-bold text-orange-600 mt-1">¥{selectedDrop.text.split('\n')[1]?.replace('¥','')}</p>
-              <p className="text-xs text-slate-400 mt-1">ビットコイン円 / 更新 {selectedDrop.btcUpdatedAt ? toJST(selectedDrop.btcUpdatedAt) : '--:--'} JST</p>
+              <p className="text-xs text-slate-400 mt-1">ビットコイン円 / 15分ごと更新</p>
             </div>
           )}
           {selectedDrop.isQuote && selectedDrop.quoteData && (
@@ -1082,10 +1082,10 @@ const SpaceScreen = ({
         style={{ bottom: 'calc(2rem + env(safe-area-inset-bottom))' }}
         onPointerDown={stopPropagation} onPointerMove={stopPropagation} onPointerUp={stopPropagation}
       >
-        {/* ステータス表示（右下）アクティブTune・BOT Tune */}
+        {/* ステータス表示（右下）〇+▼=100固定 */}
         <div className="absolute right-0 -top-7 flex items-center gap-2.5 text-[11px] text-slate-400/80 pointer-events-none select-none">
-          <span title="30分以内のリアルユーザーTune数">〇 {activeTunes}</span>
-          <span title="BOT Tune数">▼ {botTunes}</span>
+          <span title="30分以内のリアルTune数">〇 {activeTunes}</span>
+          <span title="BOT Tune数">▼ {Math.max(0, MAX_WAVE_DROPS - activeTunes)}</span>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
@@ -2284,7 +2284,8 @@ const App = () => {
   // ─── ライブドロップを drops に反映（8種）───
   useEffect(() => {
     const { feeds, usdJpy, weather, btc, quote } = liveData;
-    const hasAny = Object.values(feeds).some(f => f.length > 0) || usdJpy || weather || btc || quote;
+    // quote は JP_QUOTES から常にセットされるので hasAny は必ず true になる
+    const hasAny = Object.values(feeds).some(f => f.length > 0) || usdJpy != null || weather != null || btc != null || quote != null;
     if (!hasAny) return;
     // Canvas内に散らばる固定座標
     const POS = [
@@ -2312,8 +2313,8 @@ const App = () => {
       if (feeds.hatena.length) live.push(mk('live-hatena', '📰 はてなホット',       { isNewsTune:true, feedKey:'hatena', userName:'はてな', ageGroup:'ニュース' }, 2, 'hsla(270,55%,90%,0.95)'));
       if (feeds.tech.length)   live.push(mk('live-tech',   '💻 TechCrunch',        { isNewsTune:true, feedKey:'tech',   userName:'Tech',   ageGroup:'テック'   }, 3, 'hsla(180,55%,88%,0.95)'));
       if (usdJpy !== null)     live.push(mk('live-usdjpy', `💱 ドル円\n${usdJpy.toFixed(2)} 円`, { isMarket:true, userName:'Market', ageGroup:'為替' }, 4, 'hsla(145,55%,87%,0.95)', 1));
-      if (weather)             live.push(mk('live-weather', `${weather.emoji} 東京の天気\n${weather.temp}℃`, { isWeather:true, weatherData:{...weather, updatedAt: Date.now()}, userName:'Weather', ageGroup:'天気' }, 5, 'hsla(50,80%,88%,0.95)', 3));
-      if (btc !== null)        live.push(mk('live-btc',    `₿ BTC\n¥${Math.round(btc).toLocaleString()}`, { isBtc:true, btcUpdatedAt: Date.now(), userName:'Market', ageGroup:'仮想通貨' }, 6, 'hsla(35,80%,87%,0.95)', 1));
+      if (weather)             live.push(mk('live-weather', `${weather.emoji} 東京の天気\n${weather.temp}℃`, { isWeather:true, weatherData:weather, userName:'Weather', ageGroup:'天気' }, 5, 'hsla(50,80%,88%,0.95)', 3));
+      if (btc !== null)        live.push(mk('live-btc',    `₿ BTC\n¥${Math.round(btc).toLocaleString()}`, { isBtc:true, userName:'Market', ageGroup:'仮想通貨' }, 6, 'hsla(35,80%,87%,0.95)', 1));
       if (quote)               live.push(mk('live-quote',  '💬 今日の一言',         { isQuote:true, quoteData:quote, userName:'ことわざ', ageGroup:'名言' }, 7, 'hsla(320,50%,90%,0.95)', 2));
       return [...filtered, ...live];
     });
