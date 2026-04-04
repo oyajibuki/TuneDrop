@@ -12,6 +12,9 @@ const INITIAL_ROOM_TIME = 300;
 const EXTEND_TIME = 300;
 const CANVAS_SIZE = 5000;
 const MAX_DROPS = 500;
+const MAX_WAVE_DROPS = 100; // リアルユーザー + BOT の合計上限
+// リアルユーザーのDropかどうか（BOT・広告・ライブデータを除く）
+const isRealDrop = (d) => !d.isBot && !String(d.id).startsWith('live-') && !String(d.id).startsWith('ad-');
 // Drop寿命を 30分 に制限（ユーザーフィードバックによりウザさを解消）
 const DROP_LIFETIME = 30 * 60 * 1000;
 const MAX_VIDEO_SIZE = 30 * 1024 * 1024; // 30MB
@@ -158,7 +161,8 @@ const SOUND_DEFS = {
   },
 };
 
-const generateBotDrops = (countPerBot = 8) => {
+const generateBotDrops = (totalBotDrops = MAX_WAVE_DROPS) => {
+  const countPerBot = Math.max(0, Math.ceil(totalBotDrops / BOT_USERS.length));
   const colors = ['hsla(200,70%,90%,0.9)','hsla(280,60%,90%,0.9)','hsla(340,60%,92%,0.9)','hsla(150,50%,88%,0.9)','hsla(30,60%,90%,0.9)'];
   const commonWords = ['暇', 'おなかすいた', 'ごはん', '音楽', '映画', '寝', '寂', '眠', '疲れ', '仕事', '学校', 'だるい', '最高', 'いいこと', '悩み', '空'];
   const clusters = {};
@@ -254,7 +258,10 @@ const generateBotDrops = (countPerBot = 8) => {
     });
   });
 
-  return botDrops;
+  // 広告DropはBOT枠に含めず常時表示
+  const adDrops = botDrops.filter(d => d.isAd);
+  const pureBot = botDrops.filter(d => !d.isAd).slice(0, totalBotDrops);
+  return [...pureBot, ...adDrops];
 };
 const compressImage = (file) => new Promise((resolve) => {
   const img = new Image();
@@ -1923,12 +1930,12 @@ const App = () => {
     let channel;
 
     const loadDrops = async () => {
-      // [POC_ONLY] cutoffなしで全取得しBotを混入
       const { data } = await supabase
         .from('drops')
         .select('*, users(name, avatar_url, is_online, birth_date)');
       const realDrops = data ? data.map(d => toLocalDrop(d, authUser.id)) : [];
-      setDrops([...realDrops, ...generateBotDrops()]);
+      const botSlots = Math.max(0, MAX_WAVE_DROPS - realDrops.length);
+      setDrops([...realDrops, ...generateBotDrops(botSlots)]);
     };
     loadDrops();
 
@@ -1939,10 +1946,22 @@ const App = () => {
           .select('*, users(name, avatar_url, is_online, birth_date)')
           .eq('id', payload.new.id)
           .single();
-        if (data) setDrops(prev => prev.find(d => d.id === data.id) ? prev : [...prev, toLocalDrop(data, authUserRef.current?.id)]);
+        if (!data) return;
+        const newDrop = toLocalDrop(data, authUserRef.current?.id);
+        setDrops(prev => {
+          if (prev.find(d => d.id === newDrop.id)) return prev;
+          const realCount = prev.filter(isRealDrop).length + 1;
+          const botSlots = Math.max(0, MAX_WAVE_DROPS - realCount);
+          // BOTを1個押し出す（末尾から削除）
+          const botDrops = prev.filter(d => d.isBot && !d.isAd);
+          const keptBots = botDrops.slice(0, botSlots);
+          const rest = prev.filter(d => !d.isBot || d.isAd);
+          return [...rest, ...keptBots, newDrop];
+        });
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'drops' }, (payload) => {
         setDrops(prev => prev.filter(d => d.id !== payload.old.id));
+        // リアルDropが減ったらBOTを補充（次のbotTimer更新で自動補充される）
       })
       .subscribe();
 
@@ -1991,13 +2010,15 @@ const App = () => {
       });
     }, 1500);
     
-    // 30分おきにボットドロップを再生成（古いものを置換）
+    // 5分おきにBOT補充（リアルUser数に応じて調整）
     const botTimer = setInterval(() => {
       setDrops(prev => {
-        const realDrops = prev.filter(d => !d.id.toString().startsWith('bot-'));
-        return [...realDrops, ...generateBotDrops()];
+        const realDrops = prev.filter(isRealDrop);
+        const botSlots = Math.max(0, MAX_WAVE_DROPS - realDrops.length);
+        const nonBot = prev.filter(d => !d.isBot || d.isAd);
+        return [...nonBot, ...generateBotDrops(botSlots)];
       });
-    }, 30 * 60 * 1000);
+    }, 5 * 60 * 1000);
 
     return () => {
       supabase.removeChannel(channel);
