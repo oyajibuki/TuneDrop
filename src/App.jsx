@@ -592,6 +592,7 @@ const SpaceScreen = ({
   const [isWinding, setIsWinding] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingDropId, setDraggingDropId] = useState(null);
+  const tuneIdxRef = useRef(0); // 〇ボタンで巡回するTuneのインデックス
   const [editingMedia, setEditingMedia] = useState(null);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const initialDistRef = useRef(null);
@@ -1082,10 +1083,24 @@ const SpaceScreen = ({
         style={{ bottom: 'calc(2rem + env(safe-area-inset-bottom))' }}
         onPointerDown={stopPropagation} onPointerMove={stopPropagation} onPointerUp={stopPropagation}
       >
-        {/* ステータス表示（右下）〇+▼=100固定 */}
-        <div className="absolute right-0 -top-7 flex items-center gap-2.5 text-[11px] text-slate-400/80 pointer-events-none select-none">
-          <span title="30分以内のリアルTune数">〇 {activeTunes}</span>
-          <span title="BOT Tune数">▼ {Math.max(0, MAX_WAVE_DROPS - activeTunes)}</span>
+        {/* ステータス表示（右上）〇+▼=100固定 / 〇はTune巡回ボタン */}
+        <div className="absolute right-0 -top-7 flex items-center gap-2.5 text-[11px] select-none">
+          <button
+            type="button"
+            title="クリックで次のTuneへ"
+            className="text-sky-500 font-bold hover:text-sky-400 active:scale-90 transition-transform cursor-pointer"
+            onClick={() => {
+              // リアルDropのみを巡回対象にする
+              const targets = drops.filter(d => isRealDrop(d));
+              if (targets.length === 0) return;
+              tuneIdxRef.current = (tuneIdxRef.current + 1) % targets.length;
+              const t = targets[tuneIdxRef.current];
+              setCamera({ x: t.x, y: t.y });
+            }}
+          >
+            〇 {activeTunes}
+          </button>
+          <span title="BOT Tune数" className="text-slate-400/80 pointer-events-none">▼ {Math.max(0, MAX_WAVE_DROPS - activeTunes)}</span>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
@@ -1940,6 +1955,13 @@ const App = () => {
     else alert('プロフィール保存に失敗しました: ' + error.message);
   };
 
+  // ─── アクセスカウンター（Wave画面表示時に1回だけ送信）───
+  useEffect(() => {
+    if (screen !== 'space') return;
+    fetch('https://script.google.com/macros/s/AKfycbznxYkj5ixnK_pHkGR8LUYhEYdvSYpaiF3x4LaZy964wlu068oak1X1uuIiyqCEtGWF/exec?page=TuneDrop')
+      .catch(() => {});
+  }, [screen]);
+
   // ─── Drops: 初期ロード + Realtime + Bot Drops ───
   useEffect(() => {
     if (screen !== 'space' || !authUser) return;
@@ -2038,7 +2060,8 @@ const App = () => {
       setDrops(prev => {
         const realUsers = countRealUsers(prev);
         const botSlots = Math.max(0, MAX_WAVE_DROPS - realUsers);
-        const nonBot = prev.filter(d => !isBotDrop(d));
+        // isAd も除外して広告Tuneの重複蓄積を防ぐ
+        const nonBot = prev.filter(d => !isBotDrop(d) && !d.isAd);
         return [...nonBot, ...generateBotDrops(botSlots)];
       });
     }, 5 * 60 * 1000);
