@@ -2104,7 +2104,7 @@ const App = () => {
     return () => { audio.pause(); };
   }, [bgmEnabled]);
 
-  // ─── ライブデータ取得（ニュース RSS・為替・日経平均）───
+  // ─── ライブデータ取得（ニュース RSS・為替）───
   useEffect(() => {
     if (screen !== 'space' || !authUser) return;
     const RSS_FEEDS = [
@@ -2113,53 +2113,58 @@ const App = () => {
       'https://b.hatena.ne.jp/hotentry.rss',
       'https://jp.techcrunch.com/feed/',
     ];
-    const fetchAll = async () => {
-      // ── ニュース RSS ──
+
+    const withTimeout = (promise, ms = 8000) => {
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms));
+      return Promise.race([promise, timeout]);
+    };
+
+    const fetchNews = async () => {
       const newsItems = [];
-      for (const feed of RSS_FEEDS) {
+      const results = await Promise.allSettled(
+        RSS_FEEDS.map(feed =>
+          withTimeout(fetch(`https://corsproxy.io/?${encodeURIComponent(feed)}`).then(r => r.text()))
+        )
+      );
+      results.forEach(r => {
+        if (r.status !== 'fulfilled') return;
         try {
-          const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(feed)}`);
-          const text = await res.text();
-          const xml = new DOMParser().parseFromString(text, 'text/xml');
-          const items = [...xml.querySelectorAll('item')].slice(0, 5);
-          items.forEach(item => {
+          const xml = new DOMParser().parseFromString(r.value, 'text/xml');
+          [...xml.querySelectorAll('item')].slice(0, 5).forEach(item => {
             const title = item.querySelector('title')?.textContent?.replace(/<!\[CDATA\[|\]\]>/g, '').trim();
             const link = item.querySelector('link')?.textContent?.trim()
               || item.querySelector('guid')?.textContent?.trim();
             if (title && link) newsItems.push({ title, link });
           });
         } catch(e) {}
-      }
-      // ── USD/JPY ──
-      let usdJpy = null;
-      try {
-        const res = await fetch('https://open.er-api.com/v6/latest/USD');
-        const data = await res.json();
-        usdJpy = data.rates?.JPY ?? null;
-      } catch(e) {}
-      // ── 日経平均（corsproxy.io 経由でCORSを回避）──
-      let nikkei = null;
-      try {
-        const nkUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5EN225?interval=1d&range=1d';
-        const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(nkUrl)}`);
-        const data = await res.json();
-        nikkei = data.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
-      } catch(e) {}
-
-      setLiveData({ news: newsItems, usdJpy, nikkei });
+      });
+      return newsItems;
     };
+
+    const fetchUsdJpy = async () => {
+      try {
+        const res = await withTimeout(fetch('https://open.er-api.com/v6/latest/USD'));
+        const data = await res.json();
+        return data.rates?.JPY ?? null;
+      } catch(e) { return null; }
+    };
+
+    const fetchAll = async () => {
+      const [newsItems, usdJpy] = await Promise.all([fetchNews(), fetchUsdJpy()]);
+      setLiveData({ news: newsItems, usdJpy, nikkei: null });
+    };
+
     fetchAll();
-    // 15分ごとに更新
     const interval = setInterval(fetchAll, 15 * 60 * 1000);
     return () => clearInterval(interval);
   }, [screen, authUser]);
 
   // ─── ライブドロップを drops に反映 ───
   useEffect(() => {
-    const { news, usdJpy, nikkei } = liveData;
-    if (!news.length && usdJpy === null && nikkei === null) return;
-    const baseX = (i) => [CANVAS_SIZE * 0.25, CANVAS_SIZE * 0.55, CANVAS_SIZE * 0.75, CANVAS_SIZE * 0.4][i] ?? Math.random() * CANVAS_SIZE;
-    const baseY = (i) => [CANVAS_SIZE * 0.35, CANVAS_SIZE * 0.65, CANVAS_SIZE * 0.45, CANVAS_SIZE * 0.7][i] ?? Math.random() * CANVAS_SIZE;
+    const { news, usdJpy } = liveData;
+    if (!news.length && usdJpy === null) return;
+    const baseX = (i) => [CANVAS_SIZE * 0.25, CANVAS_SIZE * 0.6][i] ?? Math.random() * CANVAS_SIZE;
+    const baseY = (i) => [CANVAS_SIZE * 0.35, CANVAS_SIZE * 0.65][i] ?? Math.random() * CANVAS_SIZE;
     setDrops(prev => {
       const filtered = prev.filter(d => !d.isNewsTune && !d.isMarket);
       const live = [];
@@ -2184,18 +2189,6 @@ const App = () => {
           isMine: false, isOnline: true, likes: 0, likedByMe: false,
           createdAt: Date.now(),
           userName: 'Market', ageGroup: '為替',
-          avatar: null, mediaUrl: null,
-        });
-      }
-      if (nikkei !== null) {
-        live.push({
-          id: 'live-nikkei', text: `📈 日経平均\n${Math.round(nikkei).toLocaleString()}`,
-          isMarket: true, isBot: true, isAd: false,
-          color: 'hsla(35, 75%, 87%, 0.95)',
-          x: baseX(2), y: baseY(2), animType: 3, animDelay: -1.5,
-          isMine: false, isOnline: true, likes: 0, likedByMe: false,
-          createdAt: Date.now(),
-          userName: 'Market', ageGroup: '株価',
           avatar: null, mediaUrl: null,
         });
       }
