@@ -304,6 +304,9 @@ const calculateAgeGroup = (birthDate) => {
   return `${Math.floor(age / 10) * 10}代`;
 };
 
+const toJST = (date = new Date()) =>
+  new Date(date).toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' });
+
 const formatTime = (seconds) => {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -584,7 +587,7 @@ const SpaceScreen = ({
   dropMedia, setDropMedia, dropMediaInputRef,
   scale, setScale, isUploading,
   isCirculating, onToggleCirculate,
-  realUsers, realTunes, botTunes,
+  activeTunes, botTunes,
 }) => {
   const [isWinding, setIsWinding] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -920,14 +923,14 @@ const SpaceScreen = ({
               <span className="text-5xl">{selectedDrop.weatherData.emoji}</span>
               <p className="text-2xl font-bold text-slate-700 mt-1">{selectedDrop.weatherData.temp}℃</p>
               <p className="text-sm text-slate-500">{selectedDrop.weatherData.desc}</p>
-              <p className="text-xs text-slate-400 mt-1">東京 / 15分ごと更新</p>
+              <p className="text-xs text-slate-400 mt-1">東京 / 更新 {selectedDrop.weatherData?.updatedAt ? toJST(selectedDrop.weatherData.updatedAt) : '--:--'} JST</p>
             </div>
           )}
           {selectedDrop.isBtc && (
             <div className="w-full mb-4 py-5 bg-orange-50 rounded-2xl text-center flex flex-col items-center gap-1">
               <span className="text-4xl">₿</span>
               <p className="text-2xl font-bold text-orange-600 mt-1">¥{selectedDrop.text.split('\n')[1]?.replace('¥','')}</p>
-              <p className="text-xs text-slate-400 mt-1">ビットコイン円 / 15分ごと更新</p>
+              <p className="text-xs text-slate-400 mt-1">ビットコイン円 / 更新 {selectedDrop.btcUpdatedAt ? toJST(selectedDrop.btcUpdatedAt) : '--:--'} JST</p>
             </div>
           )}
           {selectedDrop.isQuote && selectedDrop.quoteData && (
@@ -1079,10 +1082,9 @@ const SpaceScreen = ({
         style={{ bottom: 'calc(2rem + env(safe-area-inset-bottom))' }}
         onPointerDown={stopPropagation} onPointerMove={stopPropagation} onPointerUp={stopPropagation}
       >
-        {/* ステータス表示（右下）人数・リアルTune・BOT Tune */}
+        {/* ステータス表示（右下）アクティブTune・BOT Tune */}
         <div className="absolute right-0 -top-7 flex items-center gap-2.5 text-[11px] text-slate-400/80 pointer-events-none select-none">
-          <span title="オンラインユーザー数">〇 {realUsers}</span>
-          <span title="リアルユーザーのTune数">✦ {realTunes}</span>
+          <span title="30分以内のリアルユーザーTune数">〇 {activeTunes}</span>
           <span title="BOT Tune数">▼ {botTunes}</span>
         </div>
         <div className="flex items-center gap-3">
@@ -1795,8 +1797,9 @@ const App = () => {
 
   // ライブデータ（ニュース4種・為替・天気・BTC・名言）
   const [liveData, setLiveData] = useState({ feeds: { nhk: [], yahoo: [], hatena: [], tech: [] }, usdJpy: null, weather: null, btc: null, quote: null });
-  // オンライン統計（リアルユーザー数・リアルTune数・BOT Tune数）
-  const [onlineStats, setOnlineStats] = useState({ users: 0, realTunes: 0 });
+  // アクティブTune数（30分以内のリアルDrop / dropsステートから直接計算）
+  const activeTunes = drops.filter(d => isRealDrop(d) && (Date.now() - d.createdAt) < DROP_LIFETIME).length;
+  const botTuneCount = drops.filter(isBotDrop).length;
 
   // 巡回・サウンド設定
   const [isCirculating, setIsCirculating] = useState(false);
@@ -2037,50 +2040,11 @@ const App = () => {
       });
     }, 5 * 60 * 1000);
 
-    // ── オンラインユーザー数を取得 ──
-    const fetchOnlineStats = async () => {
-      const { data: onlineUsers } = await supabase
-        .from('users')
-        .select('id')
-        .eq('is_online', true);
-      const onlineIds = new Set((onlineUsers || []).map(u => u.id));
-      setOnlineStats({
-        users: onlineIds.size,
-        realTunes: drops.filter(d => isRealDrop(d) && onlineIds.has(d.userId)).length,
-      });
-    };
-    fetchOnlineStats();
-
-    // usersテーブルの is_online 変化をリアルタイム監視
-    const usersChannel = supabase.channel('online-users-watch')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users' },
-        () => fetchOnlineStats()
-      ).subscribe();
-
-    // ハートビート: 5分ごとに自分の is_online を更新（ブラウザ落ちによる残留を防止）
-    const heartbeat = setInterval(async () => {
-      if (authUser) await supabase.from('users').update({ is_online: true }).eq('id', authUser.id);
-      fetchOnlineStats();
-    }, 5 * 60 * 1000);
-
-    // ページを閉じたとき is_online=false
-    const handleBeforeUnload = () => {
-      if (authUser) {
-        navigator.sendBeacon
-          ? navigator.sendBeacon(`https://fikijrghktqilpxqoyvw.supabase.co/rest/v1/users?id=eq.${authUser.id}`, JSON.stringify({ is_online: false }))
-          : supabase.from('users').update({ is_online: false }).eq('id', authUser.id);
-      }
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
     return () => {
       supabase.removeChannel(channel);
-      supabase.removeChannel(usersChannel);
       clearInterval(timer);
       clearInterval(physicsTimer);
       clearInterval(botTimer);
-      clearInterval(heartbeat);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [screen, authUser]);
 
@@ -2348,8 +2312,8 @@ const App = () => {
       if (feeds.hatena.length) live.push(mk('live-hatena', '📰 はてなホット',       { isNewsTune:true, feedKey:'hatena', userName:'はてな', ageGroup:'ニュース' }, 2, 'hsla(270,55%,90%,0.95)'));
       if (feeds.tech.length)   live.push(mk('live-tech',   '💻 TechCrunch',        { isNewsTune:true, feedKey:'tech',   userName:'Tech',   ageGroup:'テック'   }, 3, 'hsla(180,55%,88%,0.95)'));
       if (usdJpy !== null)     live.push(mk('live-usdjpy', `💱 ドル円\n${usdJpy.toFixed(2)} 円`, { isMarket:true, userName:'Market', ageGroup:'為替' }, 4, 'hsla(145,55%,87%,0.95)', 1));
-      if (weather)             live.push(mk('live-weather', `${weather.emoji} 東京の天気\n${weather.temp}℃`, { isWeather:true, weatherData:weather, userName:'Weather', ageGroup:'天気' }, 5, 'hsla(50,80%,88%,0.95)', 3));
-      if (btc !== null)        live.push(mk('live-btc',    `₿ BTC\n¥${Math.round(btc).toLocaleString()}`, { isBtc:true, userName:'Market', ageGroup:'仮想通貨' }, 6, 'hsla(35,80%,87%,0.95)', 1));
+      if (weather)             live.push(mk('live-weather', `${weather.emoji} 東京の天気\n${weather.temp}℃`, { isWeather:true, weatherData:{...weather, updatedAt: Date.now()}, userName:'Weather', ageGroup:'天気' }, 5, 'hsla(50,80%,88%,0.95)', 3));
+      if (btc !== null)        live.push(mk('live-btc',    `₿ BTC\n¥${Math.round(btc).toLocaleString()}`, { isBtc:true, btcUpdatedAt: Date.now(), userName:'Market', ageGroup:'仮想通貨' }, 6, 'hsla(35,80%,87%,0.95)', 1));
       if (quote)               live.push(mk('live-quote',  '💬 今日の一言',         { isQuote:true, quoteData:quote, userName:'ことわざ', ageGroup:'名言' }, 7, 'hsla(320,50%,90%,0.95)', 2));
       return [...filtered, ...live];
     });
@@ -2689,9 +2653,8 @@ const App = () => {
           dropMedia={dropMedia} setDropMedia={setDropMedia} dropMediaInputRef={dropMediaInputRef}
           isUploading={isUploading}
           isCirculating={isCirculating} onToggleCirculate={() => setIsCirculating(v => !v)}
-          realUsers={onlineStats.users}
-          realTunes={onlineStats.realTunes}
-          botTunes={drops.filter(isBotDrop).length}
+          activeTunes={activeTunes}
+          botTunes={botTuneCount}
         />
       )}
       {screen === 'room'    && (
