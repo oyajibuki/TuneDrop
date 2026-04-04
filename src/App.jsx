@@ -42,6 +42,20 @@ const BOT_DROP_TEXTS = [
   '深夜のテンション','缶コーヒーうまい','空見てた','ひとこといいたかっただけ',
   '最近余裕ない','ゆっくりしたい','なんかドキドキしてる','いい夢みた',
 ];
+const BOT_OPENERS = [
+  'ねえ、ちょっといい？',
+  'こんばんは〜、何してた？',
+  'なんか話したい気分だった',
+  'ひとりで考えすぎてて。聞いてほしかった',
+  'あなたのこと気になって',
+  'なんとなく声かけたくなった',
+  '最近どう？って聞きたかった',
+  'ちょっとだけ話しかけていい？',
+  'なんか今日、誰かと話したかったんだよね',
+  'ここ好きで、よく来てる',
+  'あなたの言葉、刺さったから',
+  'ちょうど同じこと思ってた',
+];
 const BOT_REPLIES = [
   'わかる〜','それ最高だよね','今同じこと思ってた','すごくわかる','ほんとそれ',
   'なんか共感しかない','えっそれ私も','ふかいね','そっかそっか','うんうん',
@@ -2123,10 +2137,11 @@ const App = () => {
         const data = await res.json();
         usdJpy = data.rates?.JPY ?? null;
       } catch(e) {}
-      // ── 日経平均 ──
+      // ── 日経平均（corsproxy.io 経由でCORSを回避）──
       let nikkei = null;
       try {
-        const res = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EN225?interval=1d&range=1d', { headers: { 'Accept': 'application/json' } });
+        const nkUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5EN225?interval=1d&range=1d';
+        const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(nkUrl)}`);
         const data = await res.json();
         nikkei = data.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
       } catch(e) {}
@@ -2331,10 +2346,7 @@ const App = () => {
       setScreen('waiting');
       setSelectedDrop(null);
       setTimeout(() => {
-        setScreen('room');
-        setRoomTime(INITIAL_ROOM_TIME);
-        setMessages([{ id: 'bot-sys-1', text: '波長が合いました。5分間のSyncを開始します。', isMine: false, isSystem: true }]);
-        playSound('roomStart');
+        startBotChat(selectedDrop);
       }, 2000);
       return;
     }
@@ -2357,6 +2369,17 @@ const App = () => {
     // 注: 実ユーザーの場合は WaitingScreen の useEffect が status: active を検知して自動遷移します
   };
 
+  const startBotChat = (botPartner) => {
+    const opener = BOT_OPENERS[Math.floor(Math.random() * BOT_OPENERS.length)];
+    setScreen('room'); setRoomTime(INITIAL_ROOM_TIME);
+    setMessages([{ id: 'bot-sys-1', text: '波長が合いました。5分間のSyncを開始します。', isMine: false, isSystem: true }]);
+    playSound('roomStart');
+    setTimeout(() => {
+      setMessages(prev => [...prev, { id: `bot-open-${Date.now()}`, text: opener, isMine: false, isSystem: false }]);
+      playSound('msgReceive');
+    }, 1200 + Math.random() * 800);
+  };
+
   const handleAcceptRequest = async () => {
     if (!incomingRequest) return;
     playSound('accept');
@@ -2364,9 +2387,7 @@ const App = () => {
       const bot = BOT_USERS.find(b => b.id === incomingRequest.partner.userId);
       setBotUser(bot || null); setIsBotRoom(true);
       setChatPartner(incomingRequest.partner); setIncomingRequest(null);
-      setScreen('room'); setRoomTime(INITIAL_ROOM_TIME);
-      setMessages([{ id: 'bot-sys-1', text: '波長が合いました。5分間のSyncを開始します。', isMine: false, isSystem: true }]);
-      playSound('roomStart');
+      startBotChat(incomingRequest.partner);
       return;
     }
     await supabase.from('rooms').update({ status: 'active' }).eq('id', incomingRequest.roomId);
