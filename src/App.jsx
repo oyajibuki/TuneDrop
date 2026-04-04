@@ -42,6 +42,39 @@ const BOT_DROP_TEXTS = [
   '深夜のテンション','缶コーヒーうまい','空見てた','ひとこといいたかっただけ',
   '最近余裕ない','ゆっくりしたい','なんかドキドキしてる','いい夢みた',
 ];
+const JP_QUOTES = [
+  { text: '七転び八起き', author: 'ことわざ' },
+  { text: '一期一会', author: '茶道の精神' },
+  { text: '継続は力なり', author: 'ことわざ' },
+  { text: '明日は明日の風が吹く', author: 'ことわざ' },
+  { text: '笑う門には福来たる', author: 'ことわざ' },
+  { text: '急がば回れ', author: 'ことわざ' },
+  { text: '案ずるより産むが易し', author: 'ことわざ' },
+  { text: '石の上にも三年', author: 'ことわざ' },
+  { text: '花より団子', author: 'ことわざ' },
+  { text: 'いまここに生きることが すべて', author: '不明' },
+  { text: '失敗は成功のもと', author: 'ことわざ' },
+  { text: '人生は一度きり', author: 'ことわざ' },
+  { text: 'なるようになる', author: 'ことわざ' },
+  { text: '千里の道も一歩から', author: '老子' },
+  { text: '情けは人のためならず', author: 'ことわざ' },
+  { text: '雨降って地固まる', author: 'ことわざ' },
+  { text: '明けない夜はない', author: 'ことわざ' },
+  { text: '今日という日は 残りの人生の最初の日', author: 'アメリカのことわざ' },
+];
+
+const WEATHER_EMOJI = (code) => {
+  const c = Number(code);
+  if (c === 113) return '☀️';
+  if (c === 116) return '⛅';
+  if ([119, 122].includes(c)) return '☁️';
+  if ([143, 248, 260].includes(c)) return '🌫️';
+  if ([200, 386, 389, 392, 395].includes(c)) return '⛈️';
+  if ([176, 263, 266, 293, 296, 299, 302, 305, 308, 353, 356, 359].includes(c)) return '🌧️';
+  if (c >= 179 && c <= 377) return '❄️';
+  return '🌤️';
+};
+
 const BOT_OPENERS = [
   'ねえ、ちょっといい？',
   'こんばんは〜、何してた？',
@@ -755,7 +788,13 @@ const SpaceScreen = ({
                       : drop.isNewsTune
                       ? <div className="w-12 h-12 rounded-full border-2 border-white shadow-sm bg-blue-100 flex items-center justify-center text-2xl pointer-events-none">📰</div>
                       : drop.isMarket
-                      ? <div className="w-12 h-12 rounded-full border-2 border-white shadow-sm bg-emerald-50 flex items-center justify-center text-2xl pointer-events-none">{drop.ageGroup === '為替' ? '💱' : '📈'}</div>
+                      ? <div className="w-12 h-12 rounded-full border-2 border-white shadow-sm bg-emerald-50 flex items-center justify-center text-2xl pointer-events-none">💱</div>
+                      : drop.isWeather
+                      ? <div className="w-12 h-12 rounded-full border-2 border-white shadow-sm bg-amber-50 flex items-center justify-center text-2xl pointer-events-none">{drop.weatherData?.emoji || '🌤️'}</div>
+                      : drop.isBtc
+                      ? <div className="w-12 h-12 rounded-full border-2 border-white shadow-sm bg-orange-50 flex items-center justify-center text-2xl pointer-events-none">₿</div>
+                      : drop.isQuote
+                      ? <div className="w-12 h-12 rounded-full border-2 border-white shadow-sm bg-pink-50 flex items-center justify-center text-2xl pointer-events-none">💬</div>
                       : <img src={drop.avatar} alt="avatar" className="w-12 h-12 rounded-full border-2 border-white object-cover shadow-sm pointer-events-none" draggable="false" />
                     }
                     <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${drop.isOnline ? 'bg-green-500' : 'bg-slate-400'}`}></span>
@@ -797,7 +836,22 @@ const SpaceScreen = ({
                 )}
                 {drop.isMarket && (
                   <span className="absolute -top-4 -left-2 bg-emerald-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm z-10 pointer-events-none">
-                    {drop.ageGroup === '為替' ? '💱' : '📈'} LIVE
+                    💱 LIVE
+                  </span>
+                )}
+                {drop.isWeather && (
+                  <span className="absolute -top-4 -left-2 bg-amber-400 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm z-10 pointer-events-none">
+                    🌤️ LIVE
+                  </span>
+                )}
+                {drop.isBtc && (
+                  <span className="absolute -top-4 -left-2 bg-orange-400 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm z-10 pointer-events-none">
+                    ₿ LIVE
+                  </span>
+                )}
+                {drop.isQuote && (
+                  <span className="absolute -top-4 -left-2 bg-pink-400 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm z-10 pointer-events-none">
+                    💬
                   </span>
                 )}
               </div>
@@ -833,7 +887,13 @@ const SpaceScreen = ({
             : selectedDrop.isNewsTune
             ? <div className="w-20 h-20 rounded-full mb-3 border-4 border-blue-100 shadow-inner flex items-center justify-center text-4xl bg-blue-50">📰</div>
             : selectedDrop.isMarket
-            ? <div className="w-20 h-20 rounded-full mb-3 border-4 border-emerald-100 shadow-inner flex items-center justify-center text-4xl bg-emerald-50">{selectedDrop.ageGroup === '為替' ? '💱' : '📈'}</div>
+            ? <div className="w-20 h-20 rounded-full mb-3 border-4 border-emerald-100 shadow-inner flex items-center justify-center text-4xl bg-emerald-50">💱</div>
+            : selectedDrop.isWeather
+            ? <div className="w-20 h-20 rounded-full mb-3 border-4 border-amber-100 shadow-inner flex items-center justify-center text-4xl bg-amber-50">{selectedDrop.weatherData?.emoji || '🌤️'}</div>
+            : selectedDrop.isBtc
+            ? <div className="w-20 h-20 rounded-full mb-3 border-4 border-orange-100 shadow-inner flex items-center justify-center text-4xl bg-orange-50">₿</div>
+            : selectedDrop.isQuote
+            ? <div className="w-20 h-20 rounded-full mb-3 border-4 border-pink-100 shadow-inner flex items-center justify-center text-4xl bg-pink-50">💬</div>
             : <img src={selectedDrop.avatar} className="w-20 h-20 rounded-full mb-3 border-4 border-sky-100 shadow-inner object-cover" alt="avatar" />
           }
           <div className="flex flex-col items-center mb-4">
@@ -843,6 +903,27 @@ const SpaceScreen = ({
             </span>
           </div>
           <p className="text-xl font-bold mb-4 text-slate-800 text-center whitespace-pre-wrap">"{selectedDrop.text}"</p>
+          {selectedDrop.isWeather && selectedDrop.weatherData && (
+            <div className="w-full mb-4 py-5 bg-amber-50 rounded-2xl text-center flex flex-col items-center gap-1">
+              <span className="text-5xl">{selectedDrop.weatherData.emoji}</span>
+              <p className="text-2xl font-bold text-slate-700 mt-1">{selectedDrop.weatherData.temp}℃</p>
+              <p className="text-sm text-slate-500">{selectedDrop.weatherData.desc}</p>
+              <p className="text-xs text-slate-400 mt-1">東京 / 15分ごと更新</p>
+            </div>
+          )}
+          {selectedDrop.isBtc && (
+            <div className="w-full mb-4 py-5 bg-orange-50 rounded-2xl text-center flex flex-col items-center gap-1">
+              <span className="text-4xl">₿</span>
+              <p className="text-2xl font-bold text-orange-600 mt-1">¥{selectedDrop.text.split('\n')[1]?.replace('¥','')}</p>
+              <p className="text-xs text-slate-400 mt-1">ビットコイン円 / 15分ごと更新</p>
+            </div>
+          )}
+          {selectedDrop.isQuote && selectedDrop.quoteData && (
+            <div className="w-full mb-4 py-5 bg-pink-50 rounded-2xl text-center flex flex-col items-center gap-2 px-4">
+              <p className="text-lg font-bold text-slate-700 leading-relaxed">「{selectedDrop.quoteData.text}」</p>
+              <p className="text-sm text-slate-400">— {selectedDrop.quoteData.author}</p>
+            </div>
+          )}
           {selectedDrop.isNewsTune && selectedDrop.currentNewsItem && (
             <div className="w-full flex flex-col gap-2 mb-4">
               <p className="text-sm text-slate-700 font-medium leading-snug text-center px-2">
@@ -854,7 +935,8 @@ const SpaceScreen = ({
               </a>
               <button
                 onClick={() => {
-                  const item = liveData.news[Math.floor(Math.random() * liveData.news.length)];
+                  const articles = liveData.feeds[selectedDrop.feedKey] || [];
+                  const item = articles[Math.floor(Math.random() * articles.length)];
                   setSelectedDrop(prev => ({ ...prev, currentNewsItem: item }));
                 }}
                 className="w-full py-2 bg-slate-100 text-slate-500 rounded-2xl text-sm hover:bg-slate-200 transition">
@@ -896,7 +978,7 @@ const SpaceScreen = ({
              </div>
           )}
 
-          {!selectedDrop.isAd && !selectedDrop.isNewsTune && !selectedDrop.isMarket && (
+          {!selectedDrop.isAd && !selectedDrop.isNewsTune && !selectedDrop.isMarket && !selectedDrop.isWeather && !selectedDrop.isBtc && !selectedDrop.isQuote && (
             selectedDrop.isMine ? (
               <button onClick={() => handleDeleteDrop(selectedDrop.id)} className="w-full py-3.5 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center gap-2 hover:bg-rose-100 transition font-bold shadow-sm">
                 Dropを取り消す
@@ -1693,8 +1775,8 @@ const App = () => {
   const [isBotRoom, setIsBotRoom] = useState(false);
   const [botUser, setBotUser] = useState(null);
 
-  // ライブデータ（ニュース・為替・株価）
-  const [liveData, setLiveData] = useState({ news: [], usdJpy: null, nikkei: null });
+  // ライブデータ（ニュース4種・為替・天気・BTC・名言）
+  const [liveData, setLiveData] = useState({ feeds: { nhk: [], yahoo: [], hatena: [], tech: [] }, usdJpy: null, weather: null, btc: null, quote: null });
 
   // 巡回・サウンド設定
   const [isCirculating, setIsCirculating] = useState(false);
@@ -2104,94 +2186,94 @@ const App = () => {
     return () => { audio.pause(); };
   }, [bgmEnabled]);
 
-  // ─── ライブデータ取得（ニュース RSS・為替）───
+  // ─── ライブデータ取得（ニュース4種・為替・天気・BTC・名言）───
   useEffect(() => {
     if (screen !== 'space' || !authUser) return;
-    const RSS_FEEDS = [
-      'https://www3.nhk.or.jp/rss/news/cat0.xml',
-      'https://news.yahoo.co.jp/rss/topics/top-picks.xml',
-      'https://b.hatena.ne.jp/hotentry.rss',
-      'https://jp.techcrunch.com/feed/',
-    ];
-
-    const withTimeout = (promise, ms = 8000) => {
-      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms));
-      return Promise.race([promise, timeout]);
+    const withTimeout = (promise, ms = 8000) => Promise.race([
+      promise,
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
+    ]);
+    const parseRss = (text) => {
+      const xml = new DOMParser().parseFromString(text, 'text/xml');
+      return [...xml.querySelectorAll('item')].slice(0, 8).map(item => ({
+        title: item.querySelector('title')?.textContent?.replace(/<!\[CDATA\[|\]\]>/g, '').trim(),
+        link: item.querySelector('link')?.textContent?.trim() || item.querySelector('guid')?.textContent?.trim(),
+      })).filter(i => i.title && i.link);
     };
-
-    const fetchNews = async () => {
-      const newsItems = [];
-      const results = await Promise.allSettled(
-        RSS_FEEDS.map(feed =>
-          withTimeout(fetch(`https://corsproxy.io/?${encodeURIComponent(feed)}`).then(r => r.text()))
-        )
-      );
-      results.forEach(r => {
-        if (r.status !== 'fulfilled') return;
-        try {
-          const xml = new DOMParser().parseFromString(r.value, 'text/xml');
-          [...xml.querySelectorAll('item')].slice(0, 5).forEach(item => {
-            const title = item.querySelector('title')?.textContent?.replace(/<!\[CDATA\[|\]\]>/g, '').trim();
-            const link = item.querySelector('link')?.textContent?.trim()
-              || item.querySelector('guid')?.textContent?.trim();
-            if (title && link) newsItems.push({ title, link });
-          });
-        } catch(e) {}
-      });
-      return newsItems;
-    };
-
-    const fetchUsdJpy = async () => {
+    const fetchRss = async (url) => {
       try {
-        const res = await withTimeout(fetch('https://open.er-api.com/v6/latest/USD'));
-        const data = await res.json();
-        return data.rates?.JPY ?? null;
-      } catch(e) { return null; }
+        const text = await withTimeout(fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`).then(r => r.text()));
+        return parseRss(text);
+      } catch(e) { return []; }
     };
-
     const fetchAll = async () => {
-      const [newsItems, usdJpy] = await Promise.all([fetchNews(), fetchUsdJpy()]);
-      setLiveData({ news: newsItems, usdJpy, nikkei: null });
+      const [nhk, yahoo, hatena, tech, rateRes, weatherRes, btcRes] = await Promise.allSettled([
+        fetchRss('https://www3.nhk.or.jp/rss/news/cat0.xml'),
+        fetchRss('https://news.yahoo.co.jp/rss/topics/top-picks.xml'),
+        fetchRss('https://b.hatena.ne.jp/hotentry.rss'),
+        fetchRss('https://jp.techcrunch.com/feed/'),
+        withTimeout(fetch('https://open.er-api.com/v6/latest/USD').then(r => r.json())),
+        withTimeout(fetch('https://wttr.in/Tokyo?format=j1').then(r => r.json())),
+        withTimeout(fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=jpy').then(r => r.json())),
+      ]);
+      const usdJpy = rateRes.status === 'fulfilled' ? (rateRes.value?.rates?.JPY ?? null) : null;
+      const weatherRaw = weatherRes.status === 'fulfilled' ? weatherRes.value?.current_condition?.[0] : null;
+      const weather = weatherRaw ? {
+        temp: weatherRaw.temp_C,
+        emoji: WEATHER_EMOJI(weatherRaw.weatherCode),
+        desc: weatherRaw.weatherDesc?.[0]?.value ?? '',
+      } : null;
+      const btc = btcRes.status === 'fulfilled' ? (btcRes.value?.bitcoin?.jpy ?? null) : null;
+      const quote = JP_QUOTES[Math.floor(Math.random() * JP_QUOTES.length)];
+      setLiveData({
+        feeds: {
+          nhk: nhk.status === 'fulfilled' ? nhk.value : [],
+          yahoo: yahoo.status === 'fulfilled' ? yahoo.value : [],
+          hatena: hatena.status === 'fulfilled' ? hatena.value : [],
+          tech: tech.status === 'fulfilled' ? tech.value : [],
+        },
+        usdJpy, weather, btc, quote,
+      });
     };
-
     fetchAll();
     const interval = setInterval(fetchAll, 15 * 60 * 1000);
     return () => clearInterval(interval);
   }, [screen, authUser]);
 
-  // ─── ライブドロップを drops に反映 ───
+  // ─── ライブドロップを drops に反映（8種）───
   useEffect(() => {
-    const { news, usdJpy } = liveData;
-    if (!news.length && usdJpy === null) return;
-    const baseX = (i) => [CANVAS_SIZE * 0.25, CANVAS_SIZE * 0.6][i] ?? Math.random() * CANVAS_SIZE;
-    const baseY = (i) => [CANVAS_SIZE * 0.35, CANVAS_SIZE * 0.65][i] ?? Math.random() * CANVAS_SIZE;
+    const { feeds, usdJpy, weather, btc, quote } = liveData;
+    const hasAny = Object.values(feeds).some(f => f.length > 0) || usdJpy || weather || btc || quote;
+    if (!hasAny) return;
+    // Canvas内に散らばる固定座標
+    const POS = [
+      { x: CANVAS_SIZE * 0.18, y: CANVAS_SIZE * 0.28 }, // NHK
+      { x: CANVAS_SIZE * 0.52, y: CANVAS_SIZE * 0.18 }, // Yahoo
+      { x: CANVAS_SIZE * 0.82, y: CANVAS_SIZE * 0.32 }, // はてな
+      { x: CANVAS_SIZE * 0.38, y: CANVAS_SIZE * 0.72 }, // Tech
+      { x: CANVAS_SIZE * 0.68, y: CANVAS_SIZE * 0.62 }, // USD/JPY
+      { x: CANVAS_SIZE * 0.12, y: CANVAS_SIZE * 0.60 }, // 天気
+      { x: CANVAS_SIZE * 0.78, y: CANVAS_SIZE * 0.75 }, // BTC
+      { x: CANVAS_SIZE * 0.48, y: CANVAS_SIZE * 0.45 }, // 名言
+    ];
+    const mk = (id, text, extra, posIdx, color, animType = 2) => ({
+      id, text, ...extra,
+      isBot: true, isAd: false, isMine: false, isOnline: true,
+      likes: 0, likedByMe: false, createdAt: Date.now(), mediaUrl: null,
+      color, animType, animDelay: -Math.random() * 3,
+      x: POS[posIdx].x, y: POS[posIdx].y,
+    });
     setDrops(prev => {
-      const filtered = prev.filter(d => !d.isNewsTune && !d.isMarket);
+      const filtered = prev.filter(d => !d.isNewsTune && !d.isMarket && !d.isWeather && !d.isBtc && !d.isQuote);
       const live = [];
-      if (news.length > 0) {
-        live.push({
-          id: 'live-news', text: '📰 ニュース',
-          isNewsTune: true, isBot: true, isAd: false,
-          color: 'hsla(220, 70%, 90%, 0.95)',
-          x: baseX(0), y: baseY(0), animType: 2, animDelay: -1,
-          isMine: false, isOnline: true, likes: 0, likedByMe: false,
-          createdAt: Date.now(),
-          userName: 'TuneDrop News', ageGroup: 'ニュース',
-          avatar: null, mediaUrl: null,
-        });
-      }
-      if (usdJpy !== null) {
-        live.push({
-          id: 'live-usdjpy', text: `💱 ドル円\n${usdJpy.toFixed(2)} 円`,
-          isMarket: true, isBot: true, isAd: false,
-          color: 'hsla(145, 55%, 87%, 0.95)',
-          x: baseX(1), y: baseY(1), animType: 1, animDelay: -2,
-          isMine: false, isOnline: true, likes: 0, likedByMe: false,
-          createdAt: Date.now(),
-          userName: 'Market', ageGroup: '為替',
-          avatar: null, mediaUrl: null,
-        });
-      }
+      if (feeds.nhk.length)    live.push(mk('live-nhk',    '📰 NHKニュース',        { isNewsTune:true, feedKey:'nhk',    userName:'NHK',    ageGroup:'ニュース' }, 0, 'hsla(0,70%,90%,0.95)'));
+      if (feeds.yahoo.length)  live.push(mk('live-yahoo',  '📰 Yahoo!ニュース',     { isNewsTune:true, feedKey:'yahoo',  userName:'Yahoo!', ageGroup:'ニュース' }, 1, 'hsla(210,70%,90%,0.95)'));
+      if (feeds.hatena.length) live.push(mk('live-hatena', '📰 はてなホット',       { isNewsTune:true, feedKey:'hatena', userName:'はてな', ageGroup:'ニュース' }, 2, 'hsla(270,55%,90%,0.95)'));
+      if (feeds.tech.length)   live.push(mk('live-tech',   '💻 TechCrunch',        { isNewsTune:true, feedKey:'tech',   userName:'Tech',   ageGroup:'テック'   }, 3, 'hsla(180,55%,88%,0.95)'));
+      if (usdJpy !== null)     live.push(mk('live-usdjpy', `💱 ドル円\n${usdJpy.toFixed(2)} 円`, { isMarket:true, userName:'Market', ageGroup:'為替' }, 4, 'hsla(145,55%,87%,0.95)', 1));
+      if (weather)             live.push(mk('live-weather', `${weather.emoji} 東京の天気\n${weather.temp}℃`, { isWeather:true, weatherData:weather, userName:'Weather', ageGroup:'天気' }, 5, 'hsla(50,80%,88%,0.95)', 3));
+      if (btc !== null)        live.push(mk('live-btc',    `₿ BTC\n¥${Math.round(btc).toLocaleString()}`, { isBtc:true, userName:'Market', ageGroup:'仮想通貨' }, 6, 'hsla(35,80%,87%,0.95)', 1));
+      if (quote)               live.push(mk('live-quote',  '💬 今日の一言',         { isQuote:true, quoteData:quote, userName:'ことわざ', ageGroup:'名言' }, 7, 'hsla(320,50%,90%,0.95)', 2));
       return [...filtered, ...live];
     });
   }, [liveData]);
@@ -2293,8 +2375,9 @@ const App = () => {
   };
 
   const handleCatch = (drop) => {
-    if (drop.isNewsTune && liveData.news.length > 0) {
-      const item = liveData.news[Math.floor(Math.random() * liveData.news.length)];
+    if (drop.isNewsTune && drop.feedKey) {
+      const articles = liveData.feeds[drop.feedKey] || [];
+      const item = articles.length ? articles[Math.floor(Math.random() * articles.length)] : null;
       setSelectedDrop({ ...drop, currentNewsItem: item });
     } else {
       setSelectedDrop(drop);
