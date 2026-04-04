@@ -15,6 +15,10 @@ const MAX_DROPS = 500;
 const MAX_WAVE_DROPS = 100; // リアルユーザー + BOT の合計上限
 // リアルユーザーのDropかどうか（BOT・広告・ライブデータを除く）
 const isRealDrop = (d) => !d.isBot && !String(d.id).startsWith('live-') && !String(d.id).startsWith('ad-');
+// ライブTune（ニュース・天気・BTC等）かどうか
+const isLiveTune = (d) => !!(d.isNewsTune || d.isMarket || d.isWeather || d.isBtc || d.isQuote);
+// BOT枠管理対象のDropかどうか（広告・ライブTuneを除くBOT Drop）
+const isBotDrop = (d) => d.isBot && !d.isAd && !isLiveTune(d);
 // Drop寿命を 30分 に制限（ユーザーフィードバックによりウザさを解消）
 const DROP_LIFETIME = 30 * 60 * 1000;
 const MAX_VIDEO_SIZE = 30 * 1024 * 1024; // 30MB
@@ -580,6 +584,7 @@ const SpaceScreen = ({
   dropMedia, setDropMedia, dropMediaInputRef,
   scale, setScale, isUploading,
   isCirculating, onToggleCirculate,
+  realCount, botCount,
 }) => {
   const [isWinding, setIsWinding] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -1074,6 +1079,11 @@ const SpaceScreen = ({
         style={{ bottom: 'calc(2rem + env(safe-area-inset-bottom))' }}
         onPointerDown={stopPropagation} onPointerMove={stopPropagation} onPointerUp={stopPropagation}
       >
+        {/* ステータス表示（右下） */}
+        <div className="absolute right-0 -top-7 flex items-center gap-2 text-[11px] text-slate-400/80 pointer-events-none select-none">
+          <span>〇 {realCount}</span>
+          <span>▼ {botCount}</span>
+        </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <button
@@ -1953,9 +1963,9 @@ const App = () => {
           const realCount = prev.filter(isRealDrop).length + 1;
           const botSlots = Math.max(0, MAX_WAVE_DROPS - realCount);
           // BOTを1個押し出す（末尾から削除）
-          const botDrops = prev.filter(d => d.isBot && !d.isAd);
+          const botDrops = prev.filter(isBotDrop);
           const keptBots = botDrops.slice(0, botSlots);
-          const rest = prev.filter(d => !d.isBot || d.isAd);
+          const rest = prev.filter(d => !isBotDrop(d));
           return [...rest, ...keptBots, newDrop];
         });
       })
@@ -2015,7 +2025,7 @@ const App = () => {
       setDrops(prev => {
         const realDrops = prev.filter(isRealDrop);
         const botSlots = Math.max(0, MAX_WAVE_DROPS - realDrops.length);
-        const nonBot = prev.filter(d => !d.isBot || d.isAd);
+        const nonBot = prev.filter(d => !isBotDrop(d));
         return [...nonBot, ...generateBotDrops(botSlots)];
       });
     }, 5 * 60 * 1000);
@@ -2285,7 +2295,7 @@ const App = () => {
       x: POS[posIdx].x, y: POS[posIdx].y,
     });
     setDrops(prev => {
-      const filtered = prev.filter(d => !d.isNewsTune && !d.isMarket && !d.isWeather && !d.isBtc && !d.isQuote);
+      const filtered = prev.filter(d => !isLiveTune(d));
       const live = [];
       if (feeds.nhk.length)    live.push(mk('live-nhk',    '📰 NHKニュース',        { isNewsTune:true, feedKey:'nhk',    userName:'NHK',    ageGroup:'ニュース' }, 0, 'hsla(0,70%,90%,0.95)'));
       if (feeds.yahoo.length)  live.push(mk('live-yahoo',  '📰 Yahoo!ニュース',     { isNewsTune:true, feedKey:'yahoo',  userName:'Yahoo!', ageGroup:'ニュース' }, 1, 'hsla(210,70%,90%,0.95)'));
@@ -2629,6 +2639,8 @@ const App = () => {
           dropMedia={dropMedia} setDropMedia={setDropMedia} dropMediaInputRef={dropMediaInputRef}
           isUploading={isUploading}
           isCirculating={isCirculating} onToggleCirculate={() => setIsCirculating(v => !v)}
+          realCount={drops.filter(isRealDrop).length}
+          botCount={drops.filter(isBotDrop).length}
         />
       )}
       {screen === 'room'    && (
