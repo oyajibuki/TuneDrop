@@ -145,6 +145,7 @@ const generateBotDrops = (countPerBot = 8) => {
     })
   );
 
+  // OshiPay 広告
   botDrops.push({
     id: `ad-oshipay`,
     text: "OshiPay\nその感動、今すぐカタチに。",
@@ -160,6 +161,50 @@ const generateBotDrops = (countPerBot = 8) => {
     isMine: false, isOnline: true, isBot: true, isAd: true,
     likes: 99, likedByMe: false, createdAt: Date.now(),
     mediaUrl: null,
+  });
+
+  // ゲーム広告ドロップ
+  const gameAds = [
+    {
+      id: 'ad-powasaba',
+      text: '🏔️ ポワサバ\n極寒の地でクランを率いて生き残れ！',
+      lpLink: 'https://oyajibuki.github.io/tools/powa/?lang=ja',
+      link: 'https://oyajibuki.github.io/whiteout-survival/',
+      color: 'hsla(210, 80%, 88%, 0.95)',
+    },
+    {
+      id: 'ad-armyrush',
+      text: '⚔️ アーミーラッシュ\n軍を指揮して戦場を制圧せよ！',
+      lpLink: 'https://oyajibuki.github.io/tools/army/',
+      link: 'https://oyajibuki.github.io/Army/',
+      color: 'hsla(140, 60%, 85%, 0.95)',
+    },
+    {
+      id: 'ad-katana',
+      text: '🗡️ Katana\n刀で斬り拓く、爽快アクション！',
+      lpLink: 'https://oyajibuki.github.io/tools/katana/',
+      link: 'https://oyajibuki.github.io/katana/',
+      color: 'hsla(0, 60%, 88%, 0.95)',
+    },
+  ];
+  gameAds.forEach(ad => {
+    botDrops.push({
+      id: ad.id,
+      text: ad.text,
+      link: ad.link,
+      lpLink: ad.lpLink,
+      userId: ad.id,
+      userName: 'Game',
+      ageGroup: '広告',
+      avatar: null,
+      color: ad.color,
+      x: Math.random() * CANVAS_SIZE,
+      y: Math.random() * CANVAS_SIZE,
+      animType: 2, animDelay: -Math.random() * 3,
+      isMine: false, isOnline: true, isBot: true, isAd: true, isGameAd: true,
+      likes: 0, likedByMe: false, createdAt: Date.now(),
+      mediaUrl: null,
+    });
   });
 
   return botDrops;
@@ -691,7 +736,10 @@ const SpaceScreen = ({
                   style={{ transform: `scale(${dropScale})`, boxShadow: glowShadow, border: `2px solid ${borderColor}` }}
                 >
                   <div className="relative">
-                    <img src={drop.avatar} alt="avatar" className="w-12 h-12 rounded-full border-2 border-white object-cover shadow-sm pointer-events-none" draggable="false" />
+                    {drop.isGameAd
+                      ? <div className="w-12 h-12 rounded-full border-2 border-white shadow-sm bg-blue-50 flex items-center justify-center text-2xl pointer-events-none">🎮</div>
+                      : <img src={drop.avatar} alt="avatar" className="w-12 h-12 rounded-full border-2 border-white object-cover shadow-sm pointer-events-none" draggable="false" />
+                    }
                     <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${drop.isOnline ? 'bg-green-500' : 'bg-slate-400'}`}></span>
                   </div>
                   <span className="text-base font-bold whitespace-nowrap text-slate-700 drop-shadow-sm pointer-events-none flex items-center gap-1.5">
@@ -714,9 +762,14 @@ const SpaceScreen = ({
                     <Bot size={8} /> BOT
                   </span>
                 )}
-                {drop.isAd && (
+                {drop.isAd && !drop.isGameAd && (
                   <span className="absolute -top-4 -left-2 bg-amber-400 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm z-10 border border-amber-200 pointer-events-none flex items-center gap-0.5">
                     <Star size={8} fill="currentColor" /> PR
+                  </span>
+                )}
+                {drop.isGameAd && (
+                  <span className="absolute -top-4 -left-2 bg-blue-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm z-10 pointer-events-none flex items-center gap-0.5">
+                    🎮 GAME
                   </span>
                 )}
               </div>
@@ -747,7 +800,10 @@ const SpaceScreen = ({
               )}
             </div>
           )}
-          <img src={selectedDrop.avatar} className="w-20 h-20 rounded-full mb-3 border-4 border-sky-100 shadow-inner object-cover" alt="avatar" />
+          {selectedDrop.isGameAd
+            ? <div className="w-20 h-20 rounded-full mb-3 border-4 border-blue-100 shadow-inner flex items-center justify-center text-4xl bg-blue-50">🎮</div>
+            : <img src={selectedDrop.avatar} className="w-20 h-20 rounded-full mb-3 border-4 border-sky-100 shadow-inner object-cover" alt="avatar" />
+          }
           <div className="flex flex-col items-center mb-4">
             <span className="text-sm font-bold text-slate-500">{selectedDrop.userName} ({selectedDrop.ageGroup})</span>
             <span className={`text-xs font-bold px-2 py-0.5 mt-1 rounded-full ${selectedDrop.isOnline ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'}`}>
@@ -755,7 +811,19 @@ const SpaceScreen = ({
             </span>
           </div>
           <p className="text-xl font-bold mb-4 text-slate-800 text-center whitespace-pre-wrap">"{selectedDrop.text}"</p>
-          {selectedDrop.link && (
+          {selectedDrop.isGameAd && selectedDrop.link && (
+            <div className="w-full flex flex-col gap-2 mb-4">
+              <a href={selectedDrop.link} target="_blank" rel="noopener noreferrer" className="w-full py-3 bg-gradient-to-r from-sky-500 to-blue-500 text-white rounded-2xl flex items-center justify-center font-bold hover:opacity-90 transition shadow-md">
+                🎮 今すぐプレイ
+              </a>
+              {selectedDrop.lpLink && (
+                <a href={selectedDrop.lpLink} target="_blank" rel="noopener noreferrer" className="w-full py-2.5 bg-slate-100 text-slate-600 rounded-2xl flex items-center justify-center text-sm hover:bg-slate-200 transition">
+                  詳細を見る
+                </a>
+              )}
+            </div>
+          )}
+          {!selectedDrop.isGameAd && selectedDrop.link && (
             <a href={selectedDrop.link} target="_blank" rel="noopener noreferrer" className="w-full mb-4 py-3 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center font-bold hover:bg-sky-200 transition shadow-sm">
               公式サイトを開く
             </a>
@@ -989,7 +1057,9 @@ const RoomScreen = ({ roomTime, chatPartner, messages, chatInput, setChatInput, 
         {messages.map(msg => (
           <div key={msg.id} className={`flex ${msg.isSystem ? 'justify-center' : msg.isMine ? 'justify-end' : 'justify-start'}`}>
             {msg.isSystem
-              ? <span className="text-xs text-slate-500 bg-white/60 px-4 py-1.5 rounded-full font-medium shadow-sm">{msg.text}</span>
+              ? msg.isGhost
+                ? <span className="text-sm text-slate-400/80 italic px-4 py-2 text-center animate-pulse">{msg.text}</span>
+                : <span className="text-xs text-slate-500 bg-white/60 px-4 py-1.5 rounded-full font-medium shadow-sm">{msg.text}</span>
               : <div className={`max-w-[75%] px-4 py-3 rounded-2xl shadow-sm text-sm ${msg.isMine ? 'bg-sky-500 text-white rounded-tr-none' : 'bg-white text-slate-800 rounded-tl-none'}`}>{msg.text}</div>
             }
           </div>
@@ -1862,6 +1932,34 @@ const App = () => {
     return () => supabase.removeChannel(channel);
   }, [authUser, screen]);
 
+  // ─── 相手退席検知（room status が finished になったら Wave 画面へ）───
+  useEffect(() => {
+    if (screen !== 'room' || !currentRoomId || isBotRoom || !authUser) return;
+    const partnerName = chatPartner?.userName || '相手';
+    const channel = supabase.channel(`room-finish:${currentRoomId}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${currentRoomId}` },
+        (payload) => {
+          if (payload.new.status === 'finished') {
+            playSound('exit');
+            // 退席メッセージをローカルに追加してからフェード
+            setMessages(prev => [...prev, {
+              id: `sys-partner-left-${Date.now()}`,
+              text: `${partnerName}は、空へと消えていきました。`,
+              isMine: false,
+              isSystem: true,
+              isGhost: true,
+            }]);
+            setTimeout(() => {
+              setCurrentRoomId(null); setChatPartner(null);
+              setIsBotRoom(false); setBotUser(null);
+              setScreen('space'); setRoomTime(INITIAL_ROOM_TIME); setMessages([]); setExtendRequested(false);
+            }, 2500);
+          }
+        }
+      ).subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [screen, currentRoomId, isBotRoom, authUser, chatPartner]);
+
   // ─── Roomメッセージ購読 ───
   useEffect(() => {
     if (screen !== 'room' || !currentRoomId || !authUser) return;
@@ -1928,14 +2026,14 @@ const App = () => {
     return () => clearInterval(id);
   }, [isCirculating, screen]);
 
-  // ─── BGM（Where_the_Wind_Stops.mp3 / ON・OFFのみ）───
+  // ─── BGM（Glass_Walls_at_Dawn.mp3 / ON・OFFのみ）───
   useEffect(() => {
     if (!bgmEnabled) {
       if (bgmAudioRef.current) { bgmAudioRef.current.pause(); bgmAudioRef.current = null; }
       return;
     }
     if (bgmAudioRef.current) { bgmAudioRef.current.pause(); bgmAudioRef.current = null; }
-    const audio = new Audio(import.meta.env.BASE_URL + 'Where_the_Wind_Stops.mp3');
+    const audio = new Audio(import.meta.env.BASE_URL + 'Glass_Walls_at_Dawn.mp3');
     audio.loop = true;
     audio.volume = 0.3;
     bgmAudioRef.current = audio;
@@ -2065,7 +2163,7 @@ const App = () => {
 
   const handleReport = () => alert('運営に通報しました。ご協力ありがとうございます。');
 
-  const handleBlockAndExit = (userName) => { handleBlock(userName); handleFadeOut(); };
+  const handleBlockAndExit = (userName) => { handleBlock(userName); handleFadeOut(true); };
 
   const handleSyncRequest = async () => {
     if (!authUser || !selectedDrop) return;
@@ -2159,9 +2257,12 @@ const App = () => {
     playSound('msgSend');
   };
 
-  const handleFadeOut = () => {
+  const handleFadeOut = async (markFinished = false) => {
     playSound('exit');
     setScreen('fade');
+    if (markFinished && currentRoomId && !isBotRoom) {
+      await supabase.from('rooms').update({ status: 'finished' }).eq('id', currentRoomId);
+    }
     setCurrentRoomId(null); setChatPartner(null);
     setIsBotRoom(false); setBotUser(null);
     setTimeout(() => { setScreen('space'); setRoomTime(INITIAL_ROOM_TIME); setMessages([]); setExtendRequested(false); }, 1500);
@@ -2266,7 +2367,7 @@ const App = () => {
           roomTime={roomTime} chatPartner={chatPartner} messages={messages}
           chatInput={chatInput} setChatInput={setChatInput}
           handleSendMessage={handleSendMessage} errorMessage={errorMessage}
-          handleNext={handleFadeOut} handleExtend={handleExtend} extendRequested={extendRequested}
+          handleNext={() => handleFadeOut(true)} handleExtend={handleExtend} extendRequested={extendRequested}
           handleReport={handleReport} handleBlockAndExit={handleBlockAndExit}
         />
       )}

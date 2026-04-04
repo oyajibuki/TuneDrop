@@ -1,0 +1,364 @@
+TuneDrop 詳細設計書
+
+1. システムアーキテクチャ
+
+本番ローンチを見据え、スケーラビリティとリアルタイム性を重視した構成とする。
+初期フェーズはWeb版（PWA）として展開し、検証後にネイティブアプリ化を目指す。
+
+フロントエンド:
+
+Web/PWA版: React (Next.js または Vite) + Tailwind CSS
+
+アプリ版: React Native (Expo) または Flutter（※将来フェーズ）
+
+バックエンド (BaaS): Supabase
+
+データベース: PostgreSQL
+
+認証: Supabase Auth (Google, LINE連携)
+
+リアルタイム通信: Supabase Realtime (WebSocket)
+
+バッチ処理: Supabase Edge Functions または PostgreSQL CRON (寿命切れDropの削除等)
+
+インフラ: Vercel または GitHub Pages (Web版ホスティング)
+
+2. データベース設計 (スキーマ)
+
+Supabase (PostgreSQL) 上に以下のテーブルを構築する。
+
+2.1. users テーブル (ユーザー情報)
+
+カラム名
+
+型
+
+制約
+
+説明
+
+id
+
+UUID
+
+PK, 自動生成
+
+ユーザーID (Auth.usersと紐付け)
+
+name
+
+VARCHAR(50)
+
+NOT NULL
+
+表示名 (ニックネーム)
+
+birth_date
+
+DATE
+
+NOT NULL
+
+生年月日
+
+gender
+
+VARCHAR(20)
+
+NOT NULL
+
+性別 (male, female, other, no_answer)
+
+avatar_url
+
+TEXT
+
+
+
+プロフィール画像のURL (Supabase Storage)
+
+is_online
+
+BOOLEAN
+
+DEFAULT true
+
+現在のオンライン状態
+
+created_at
+
+TIMESTAMP
+
+DEFAULT NOW()
+
+アカウント作成日時
+
+2.2. drops テーブル (Tune/投稿データ)
+
+カラム名
+
+型
+
+制約
+
+説明
+
+id
+
+UUID
+
+PK, 自動生成
+
+Drop ID
+
+user_id
+
+UUID
+
+FK (users.id)
+
+投稿したユーザーのID
+
+text
+
+VARCHAR(30)
+
+NOT NULL
+
+投稿内容 (30文字以内)
+
+color
+
+VARCHAR(20)
+
+NOT NULL
+
+バルーンの色 (hsl形式等)
+
+pos_x
+
+FLOAT
+
+NOT NULL
+
+空間上のX座標 (0 〜 CANVAS_SIZE)
+
+pos_y
+
+FLOAT
+
+NOT NULL
+
+空間上のY座標 (0 〜 CANVAS_SIZE)
+
+anim_type
+
+INTEGER
+
+NOT NULL
+
+揺れ方のアニメーションタイプ (1~3)
+
+created_at
+
+TIMESTAMP
+
+DEFAULT NOW()
+
+投稿日時 (30分経過で論理削除/物理削除)
+
+2.3. likes テーブル (いいね履歴)
+
+※1ユーザーにつき1Drop1回までの制約をDBレベルで担保する
+| カラム名 | 型 | 制約 | 説明 |
+| :--- | :--- | :--- | :--- |
+| id | UUID | PK, 自動生成 | いいねID |
+| drop_id | UUID | FK (drops.id) | いいねされたDropのID |
+| user_id | UUID | FK (users.id) | いいねしたユーザーのID |
+| created_at | TIMESTAMP | DEFAULT NOW() | いいね日時 |
+(UNIQUE制約: drop_id + user_id)
+
+2.4. rooms テーブル (Sync Room管理)
+
+カラム名
+
+型
+
+制約
+
+説明
+
+id
+
+UUID
+
+PK, 自動生成
+
+ルームID
+
+user1_id
+
+UUID
+
+FK (users.id)
+
+ユーザー1のID (Drop投稿者)
+
+user2_id
+
+UUID
+
+FK (users.id)
+
+ユーザー2のID (Catchした側)
+
+expires_at
+
+TIMESTAMP
+
+NOT NULL
+
+終了予定時刻 (初期値は作成から5分後)
+
+status
+
+VARCHAR(20)
+
+DEFAULT 'active'
+
+active, extended, closed
+
+2.5. messages テーブル (チャット履歴)
+
+カラム名
+
+型
+
+制約
+
+説明
+
+id
+
+UUID
+
+PK, 自動生成
+
+メッセージID
+
+room_id
+
+UUID
+
+FK (rooms.id)
+
+紐づくルームID
+
+user_id
+
+UUID
+
+FK (users.id), NULL可
+
+送信者ID (NULLの場合はシステムメッセージ)
+
+text
+
+TEXT
+
+NOT NULL
+
+メッセージ内容
+
+created_at
+
+TIMESTAMP
+
+DEFAULT NOW()
+
+送信日時
+
+2.6. blocks & reports テーブル (審査要件用)
+
+blocks: blocker_id, blocked_id, created_at
+
+reports: reporter_id, reported_user_id, reason, created_at
+
+3. 画面一覧と主要コンポーネント設計
+
+LoginScreen (ログイン画面)
+
+処理: Supabase Authを用いたOAuthログインを実行。
+
+ログインプロバイダ: Google, LINEに限定（最速検証のため）。
+(※将来的にiOSネイティブアプリとしてストア配信するフェーズでは「Appleでログイン」の追加が必須となります)
+
+状態: agreed (利用規約チェック)。
+
+ProfileScreen (初期設定画面)
+
+処理: 初回ログイン時のみ表示。入力されたデータを users テーブルにINSERT。
+
+SpaceScreen (Wave Space画面)
+
+データ取得: drops テーブルをサブスクライブ (Supabase Realtime)。自分をブロックしているユーザー、自分がブロックしているユーザーのDropは除外(RLSまたはクエリで制御)。
+
+コアロジック:
+
+無限スクロール: カメラ座標と要素の相対位置計算ループ。
+
+引力システム: 投稿時、既存の drops の text をあいまい検索し、近傍の pos_x, pos_y を算出。
+
+RoomScreen (チャット画面)
+
+データ取得: messages テーブルをRoomIDでサブスクライブ。
+
+タイマー: クライアント側でカウントダウンしつつ、サーバー側の expires_at と同期。
+
+設定・アカウント管理モーダル
+
+退会処理: users テーブルの自身のレコードを削除。PostgreSQLの ON DELETE CASCADE により、紐づくDropやいいね履歴を自動一括削除。
+
+4. コア機能・APIの挙動設計
+
+4.1. Dropの寿命管理 (30分消滅)
+
+フロントエンド: 画面上のタイマーで計算し、30分経過したものは非表示にする（Opacity計算）。
+
+バックエンド: DB容量肥大化を防ぐため、Supabaseの pg_cron 拡張機能を使用し、「created_at が30分以上前の drops レコード」を定期的にDELETEするバッチ処理を稼働させる。
+
+4.2. Extend (延長) のロジック
+
+残り10秒でボタン表示。
+
+ユーザーAが押下 → rooms テーブルのJSONBカラム等に userA_extended: true を記録。
+
+ユーザーBが押下 → userB_extended: true を記録。
+
+両者が true になった瞬間、DBのトリガーまたはEdge Functionが作動し、expires_at に +5分 加算し、messages にシステムメッセージをINSERT。
+
+4.3. NGワードフィルタリング
+
+フロントエンドでの送信前チェック（POC実装済みの内容）に加えて、API側（Supabase Edge Functions経由でのINSERT）でもサーバーサイド検証を行う。悪質な連投はアカウント停止の対象とする。
+
+5. リリースに向けた次のステップ
+
+Phase 1: Web(PWA)での初期テスト展開
+
+GitHubリポジトリの作成とVercel等へのデプロイ。
+
+Google/LINEログイン用のAPIキー等取得。
+
+知り合いにURLを共有し、実運用テストとフィードバック収集。
+
+Phase 2: ストア審査に向けた準備（※アプリ化決定後）
+
+デザインアセットの用意: アプリアイコン、スプラッシュスクリーン。
+
+利用規約・プライバシーポリシーのWebページ公開（審査時にURLが必要）。
+
+「Appleでログイン」機能の追加実装。
+
+Supabase プロジェクトの立ち上げ: 上記スキーマに基づくテーブル作成とRLS（Row Level Security: データのアクセス権限制御）の設定。
+
+フロントエンドの本格実装: POCのコードをNext.jsやReact Nativeのプロジェクトに移植し、Supabase SDKを組み込んでバックエンドと結合する。
