@@ -593,6 +593,34 @@ const SpaceScreen = ({
   const [isDragging, setIsDragging] = useState(false);
   const [draggingDropId, setDraggingDropId] = useState(null);
   const tuneIdxRef = useRef(0); // 〇ボタンで巡回するTuneのインデックス
+  const navAnimRef = useRef(null); // 〇ボタン巡回のアニメーションID
+
+  // 〇ボタン：指定座標へ滑らかにカメラ移動（requestAnimationFrame補間）
+  const navigateToTune = (targetX, targetY) => {
+    if (navAnimRef.current) cancelAnimationFrame(navAnimRef.current);
+    const startX = cameraRef.current.x;
+    const startY = cameraRef.current.y;
+    // ラップアラウンドを考慮した最短経路を計算
+    let dx = targetX - startX;
+    if (dx > CANVAS_SIZE / 2) dx -= CANVAS_SIZE;
+    if (dx < -CANVAS_SIZE / 2) dx += CANVAS_SIZE;
+    let dy = targetY - startY;
+    if (dy > CANVAS_SIZE / 2) dy -= CANVAS_SIZE;
+    if (dy < -CANVAS_SIZE / 2) dy += CANVAS_SIZE;
+    const startTime = performance.now();
+    const DURATION = 550;
+    const animate = (nowTime) => {
+      const t = Math.min(1, (nowTime - startTime) / DURATION);
+      const ease = 1 - Math.pow(1 - t, 3); // cubic ease-out
+      setCamera({
+        x: ((startX + dx * ease) + CANVAS_SIZE) % CANVAS_SIZE,
+        y: ((startY + dy * ease) + CANVAS_SIZE) % CANVAS_SIZE,
+      });
+      if (t < 1) navAnimRef.current = requestAnimationFrame(animate);
+      else navAnimRef.current = null;
+    };
+    navAnimRef.current = requestAnimationFrame(animate);
+  };
   const [editingMedia, setEditingMedia] = useState(null);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const initialDistRef = useRef(null);
@@ -607,6 +635,8 @@ const SpaceScreen = ({
 
 
   useEffect(() => { setShowMenu(false); }, [selectedDrop]);
+  // アンマウント時にカメラアニメをキャンセル
+  useEffect(() => () => { if (navAnimRef.current) cancelAnimationFrame(navAnimRef.current); }, []);
 
   useEffect(() => {
     const el = canvasContainerRef.current;
@@ -1090,12 +1120,15 @@ const SpaceScreen = ({
             title="クリックで次のTuneへ"
             className="text-sky-500 font-bold hover:text-sky-400 active:scale-90 transition-transform cursor-pointer"
             onClick={() => {
-              // リアルDropのみを巡回対象にする
-              const targets = drops.filter(d => isRealDrop(d));
+              // 30分以内の表示中リアルDropのみを巡回（期限切れ透明Dropを除外）
+              const nowMs = Date.now();
+              const targets = drops.filter(d =>
+                isRealDrop(d) && (nowMs - d.createdAt) < DROP_LIFETIME
+              );
               if (targets.length === 0) return;
               tuneIdxRef.current = (tuneIdxRef.current + 1) % targets.length;
               const t = targets[tuneIdxRef.current];
-              setCamera({ x: t.x, y: t.y });
+              navigateToTune(t.x, t.y);
             }}
           >
             〇 {activeTunes}
