@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Camera, MessageCircle, Settings, X, Heart, Flag, Ban, MoreVertical,
   Send, Clock, LogOut, CheckCircle, Trash2, Edit2, LogIn, Wind,
-  DoorOpen, AlertCircle, Star, Play, Pause, Volume2, VolumeX, Bot
+  DoorOpen, AlertCircle, Star, Play, Pause, Volume2, VolumeX, Bot, User
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
@@ -20,7 +20,7 @@ const isLiveTune = (d) => !!(d.isNewsTune || d.isMarket || d.isWeather || d.isBt
 // BOT枠管理対象のDropかどうか（広告・ライブTuneを除くBOT Drop）
 const isBotDrop = (d) => d.isBot && !d.isAd && !isLiveTune(d);
 // Drop寿命を 30分 に制限（ユーザーフィードバックによりウザさを解消）
-const DROP_LIFETIME = 30 * 60 * 1000;
+const DROP_LIFETIME = 24 * 60 * 60 * 1000; // 24時間
 const MAX_VIDEO_SIZE = 30 * 1024 * 1024; // 30MB
 const MAX_VIDEO_DURATION = 30; // 30s
 
@@ -1117,10 +1117,10 @@ const SpaceScreen = ({
         <div className="absolute right-0 -top-7 flex items-center gap-2.5 text-[11px] select-none">
           <button
             type="button"
-            title="クリックで次のTuneへ"
-            className="text-sky-500 font-bold hover:text-sky-400 active:scale-90 transition-transform cursor-pointer"
+            title="クリックで次の人のTuneへ"
+            className="flex items-center gap-1 text-sky-500 font-bold hover:text-sky-400 active:scale-90 transition-transform cursor-pointer"
             onClick={() => {
-              // 30分以内の表示中リアルDropのみを巡回（期限切れ透明Dropを除外）
+              // 24時間以内の表示中リアルDropのみを巡回（期限切れ透明Dropを除外）
               const nowMs = Date.now();
               const targets = drops.filter(d =>
                 isRealDrop(d) && (nowMs - d.createdAt) < DROP_LIFETIME
@@ -1131,9 +1131,11 @@ const SpaceScreen = ({
               navigateToTune(t.x, t.y);
             }}
           >
-            〇 {activeTunes}
+            <User size={13} /> {activeTunes}
           </button>
-          <span title="BOT Tune数" className="text-slate-400/80 pointer-events-none">▼ {Math.max(0, MAX_WAVE_DROPS - activeTunes)}</span>
+          <span title="BOT Tune数" className="flex items-center gap-1 text-slate-400/80 pointer-events-none">
+            <Bot size={13} /> {Math.max(0, MAX_WAVE_DROPS - activeTunes)}
+          </span>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
