@@ -791,7 +791,7 @@ const SpaceScreen = ({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
+        onPointerLeave={() => { setDraggingDropId(null); setIsDragging(false); }}
         onWheel={handleWheel}
         style={{ cursor: isDragging && !draggingDropId ? 'grabbing' : 'grab' }}
       >
@@ -1862,6 +1862,8 @@ const App = () => {
 
   const authUserRef = useRef(null);
   authUserRef.current = authUser;
+  const botTimerRef = useRef(null);   // Botオープナー・返信タイマー
+  const extendTimerRef = useRef(null); // Extendタイマー
 
   // ─── Auth 初期化 & コールバック処理 ───
   useEffect(() => {
@@ -2207,11 +2209,12 @@ const App = () => {
   // ─── Roomメッセージ購読 ───
   useEffect(() => {
     if (screen !== 'room' || !currentRoomId || !authUser) return;
+    let cancelled = false;
 
-    // 既存メッセージを取得
+    // 既存メッセージを取得（stale fetch防止のためcancelledフラグで制御）
     supabase.from('messages').select('*').eq('room_id', currentRoomId).order('created_at')
       .then(({ data }) => {
-        if (data) setMessages(data.map(m => ({ id: m.id, text: m.text, isMine: m.user_id === authUser.id, isSystem: m.is_system })));
+        if (!cancelled && data) setMessages(data.map(m => ({ id: m.id, text: m.text, isMine: m.user_id === authUser.id, isSystem: m.is_system })));
       });
 
     const channel = supabase.channel(`room:${currentRoomId}`)
@@ -2227,7 +2230,7 @@ const App = () => {
       )
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    return () => { cancelled = true; supabase.removeChannel(channel); };
   }, [screen, currentRoomId, authUser]);
 
 
@@ -2554,7 +2557,9 @@ const App = () => {
     setScreen('room'); setRoomTime(INITIAL_ROOM_TIME);
     setMessages([{ id: 'bot-sys-1', text: '波長が合いました。5分間のSyncを開始します。', isMine: false, isSystem: true }]);
     playSound('roomStart');
-    setTimeout(() => {
+    if (botTimerRef.current) clearTimeout(botTimerRef.current);
+    botTimerRef.current = setTimeout(() => {
+      botTimerRef.current = null;
       setMessages(prev => [...prev, { id: `bot-open-${Date.now()}`, text: opener, isMine: false, isSystem: false }]);
       playSound('msgReceive');
     }, 1200 + Math.random() * 800);
@@ -2572,7 +2577,7 @@ const App = () => {
     }
     await supabase.from('rooms').update({ status: 'active' }).eq('id', incomingRequest.roomId);
     setCurrentRoomId(incomingRequest.roomId); setChatPartner(incomingRequest.partner);
-    setIncomingRequest(null); setScreen('room'); setRoomTime(INITIAL_ROOM_TIME); setMessages([]);
+    setIncomingRequest(null); setSelectedDrop(null); setScreen('room'); setRoomTime(INITIAL_ROOM_TIME); setMessages([]);
     playSound('roomStart');
   };
 
@@ -2596,7 +2601,9 @@ const App = () => {
       const myMsg = { id: `local-${Date.now()}`, text: chatInput, isMine: true, isSystem: false };
       setMessages(prev => [...prev, myMsg]); setChatInput('');
       playSound('msgSend');
-      setTimeout(() => {
+      if (botTimerRef.current) clearTimeout(botTimerRef.current);
+      botTimerRef.current = setTimeout(() => {
+        botTimerRef.current = null;
         const reply = BOT_REPLIES[Math.floor(Math.random() * BOT_REPLIES.length)];
         setMessages(prev => [...prev, { id: `bot-${Date.now()}`, text: reply, isMine: false, isSystem: false }]);
         playSound('msgReceive');
@@ -2611,6 +2618,9 @@ const App = () => {
 
   const handleFadeOut = async (markFinished = false) => {
     playSound('exit');
+    // 未発火のBotタイマー・Extendタイマーをキャンセル
+    if (botTimerRef.current) { clearTimeout(botTimerRef.current); botTimerRef.current = null; }
+    if (extendTimerRef.current) { clearTimeout(extendTimerRef.current); extendTimerRef.current = null; }
     setScreen('fade');
     if (markFinished && currentRoomId && !isBotRoom) {
       await supabase.from('rooms').update({ status: 'finished' }).eq('id', currentRoomId);
@@ -2623,7 +2633,12 @@ const App = () => {
   const handleExtend = () => {
     setExtendRequested(true);
     // 本実装では相手も押したら延長。POCでは1.5秒後に自動延長
-    setTimeout(() => { setRoomTime(prev => prev + EXTEND_TIME); setExtendRequested(false); setMessages(prev => [...prev, { id: Date.now(), text: 'システム: 5分間Extendされました✨', isSystem: true }]); }, 1500);
+    if (extendTimerRef.current) clearTimeout(extendTimerRef.current);
+    extendTimerRef.current = setTimeout(() => {
+      extendTimerRef.current = null;
+      setRoomTime(prev => prev + EXTEND_TIME); setExtendRequested(false);
+      setMessages(prev => [...prev, { id: Date.now(), text: 'システム: 5分間Extendされました✨', isSystem: true }]);
+    }, 1500);
   };
 
   const openEditProfile = () => {
