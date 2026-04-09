@@ -1113,10 +1113,12 @@ const SpaceScreen = ({
                       <button
                         onClick={async () => {
                           if (!commentInput.trim()) return;
-                          await handlePostComment(selectedDrop.id, commentInput);
-                          setCommentSent(true);
-                          setIsCommentMode(false);
-                          setCommentInput('');
+                          const ok = await handlePostComment(selectedDrop.id, commentInput);
+                          if (ok) {
+                            setCommentSent(true);
+                            setIsCommentMode(false);
+                            setCommentInput('');
+                          }
                         }}
                         className="flex-1 py-2.5 rounded-2xl text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 transition shadow-sm"
                       >送信</button>
@@ -2670,16 +2672,23 @@ const App = () => {
   };
 
   const handlePostComment = async (dropId, text) => {
-    if (!authUser || !text.trim()) return;
-    await supabase.from('drop_comments').insert({ drop_id: dropId, user_id: authUser.id, text: text.trim() }).catch(() => {});
-    // Drop寿命を最大24時間にリセット
-    const newExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    await supabase.from('drops').update({ expires_at: newExpiry }).eq('id', dropId).lt('expires_at', newExpiry).catch(() => {});
+    if (!authUser || !text.trim()) return false;
+    const { error } = await supabase.from('drop_comments').insert({
+      drop_id: dropId,
+      user_id: authUser.id,
+      text: text.trim(),
+    });
+    if (error) { console.error('コメント送信エラー:', error); return false; }
+    // Drop寿命を最大24時間にリセット（expires_atがNULLでも上書き）
+    const newExpiry = new Date(Date.now() + DROP_LIFETIME).toISOString();
+    await supabase.from('drops').update({ expires_at: newExpiry }).eq('id', dropId);
     // コメント一覧を更新
-    try {
-      const { data } = await supabase.from('drop_comments').select('text, created_at').eq('drop_id', dropId).order('created_at', { ascending: false });
-      if (data) setDropComments(data);
-    } catch (_) {}
+    const { data } = await supabase.from('drop_comments')
+      .select('text, created_at')
+      .eq('drop_id', dropId)
+      .order('created_at', { ascending: false });
+    if (data) setDropComments(data);
+    return true;
   };
 
   const handleBlock = (userName) => {
