@@ -927,7 +927,7 @@ const SpaceScreen = ({
             onClick={() => setSelectedDrop(null)}
           />
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white/95 backdrop-blur-md p-6 rounded-3xl shadow-2xl z-50 flex flex-col items-center w-[90vw] max-w-sm max-h-[85vh] overflow-y-auto"
-          onPointerDown={stopPropagation} onPointerMove={stopPropagation} onPointerUp={stopPropagation}>
+          onPointerDown={stopPropagation} onPointerMove={stopPropagation} onPointerUp={stopPropagation} onClick={stopPropagation}>
           <button className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1" onClick={() => setSelectedDrop(null)}><X size={20} /></button>
           {!selectedDrop.isMine && (
             <div className="absolute top-4 left-4">
@@ -1038,9 +1038,32 @@ const SpaceScreen = ({
 
           {!selectedDrop.isAd && !selectedDrop.isNewsTune && !selectedDrop.isMarket && !selectedDrop.isWeather && !selectedDrop.isBtc && !selectedDrop.isQuote && (
             selectedDrop.isMine ? (
-              <button onClick={() => handleDeleteDrop(selectedDrop.id)} className="w-full py-3.5 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center gap-2 hover:bg-rose-100 transition font-bold shadow-sm">
-                Dropを取り消す
-              </button>
+              <div className="w-full flex flex-col gap-3">
+                {/* 自分のDropへのコメント一覧 */}
+                {dropComments.length > 0 && (
+                  <div className="w-full">
+                    <button
+                      onClick={() => setIsCommentsExpanded(v => !v)}
+                      className="w-full flex items-center justify-between text-xs text-slate-500 px-1 py-1"
+                    >
+                      <span>💬 届いたメッセージ ({dropComments.length}件)</span>
+                      <span>{isCommentsExpanded ? '▲' : '▼'}</span>
+                    </button>
+                    {isCommentsExpanded && (
+                      <div className="mt-1 space-y-1 max-h-36 overflow-y-auto">
+                        {dropComments.map((c, i) => (
+                          <div key={i} className="text-xs text-slate-600 bg-sky-50 rounded-xl px-3 py-2">
+                            {c.text}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <button onClick={() => handleDeleteDrop(selectedDrop.id)} className="w-full py-3.5 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center gap-2 hover:bg-rose-100 transition font-bold shadow-sm">
+                  Dropを取り消す
+                </button>
+              </div>
             ) : (
               <div className="w-full flex flex-col items-center">
                 {/* コメント一覧（折り畳み） */}
@@ -1118,6 +1141,7 @@ const SpaceScreen = ({
                             setCommentSent(true);
                             setIsCommentMode(false);
                             setCommentInput('');
+                            setIsCommentsExpanded(true);
                           }
                         }}
                         className="flex-1 py-2.5 rounded-2xl text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 transition shadow-sm"
@@ -2004,9 +2028,9 @@ const App = () => {
     };
   }, []);
 
-  // selectedDropが変わったときコメントを取得
+  // selectedDropが変わったときコメントを取得（自分のDropも含む）
   useEffect(() => {
-    if (!selectedDrop || selectedDrop.isMine || selectedDrop.isBot || selectedDrop.isAd) {
+    if (!selectedDrop || selectedDrop.isBot || selectedDrop.isAd) {
       setDropComments([]);
       return;
     }
