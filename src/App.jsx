@@ -1975,7 +1975,31 @@ const App = () => {
       if (session) { setAuthUser(session.user); checkProfile(session.user); }
       else { setAuthUser(null); setScreen('login'); }
     });
-    return () => subscription.unsubscribe();
+
+    // タブを閉じる・ブラウザを閉じるときにオフラインへ
+    const setOffline = () => {
+      const uid = authUserRef.current?.id;
+      if (!uid) return;
+      supabase.from('users').update({ is_online: false }).eq('id', uid);
+    };
+    // タブが非表示→表示に戻ったときオンラインへ
+    const handleVisibility = () => {
+      const uid = authUserRef.current?.id;
+      if (!uid) return;
+      if (document.visibilityState === 'hidden') {
+        supabase.from('users').update({ is_online: false }).eq('id', uid);
+      } else {
+        supabase.from('users').update({ is_online: true }).eq('id', uid);
+      }
+    };
+    window.addEventListener('beforeunload', setOffline);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('beforeunload', setOffline);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, []);
 
   // selectedDropが変わったときコメントを取得
@@ -2064,6 +2088,8 @@ const App = () => {
     const { data } = await supabase.from('users').select('*').eq('id', user.id).single();
     if (data) {
       setUserProfile({ name: data.name, ageGroup: calculateAgeGroup(data.birth_date), gender: data.gender, avatarUrl: data.avatar_url || '' });
+      // ログイン時にオンライン状態を更新
+      await supabase.from('users').update({ is_online: true }).eq('id', user.id);
       setScreen('space');
     } else {
       // Googleアカウントの名前を初期値に
@@ -2152,6 +2178,11 @@ const App = () => {
     loadDrops();
 
     channel = supabase.channel('public:drops')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users' }, (payload) => {
+        // ユーザーのオンライン状態が変わったらDropに即反映
+        const { id, is_online } = payload.new;
+        setDrops(prev => prev.map(d => d.userId === id ? { ...d, isOnline: is_online } : d));
+      })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'drops' }, async (payload) => {
         const { data } = await supabase
           .from('drops')
