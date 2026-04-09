@@ -1939,6 +1939,7 @@ const App = () => {
   const [loginToastFading, setLoginToastFading] = useState(false);
   const loginToastShownRef = useRef(false);
   const loginToastTimerRef = useRef(null);
+  const [loginToastIndex, setLoginToastIndex] = useState(0);
   const autoExpandCommentsRef = useRef(false);
   const [camera, setCamera] = useState({ x: CANVAS_SIZE / 2, y: CANVAS_SIZE / 2 });
   const [scale, setScale] = useState(1);
@@ -2062,21 +2063,26 @@ const App = () => {
       .then(async ({ data: myDrops }) => {
         if (!myDrops?.length) return;
         const dropIds = myDrops.map(d => d.id);
-        const [commentsRes, likesRes, recentCommentRes] = await Promise.all([
+        const [commentsRes, likesRes, allCommentsRes] = await Promise.all([
           supabase.from('drop_comments').select('id', { count: 'exact', head: true })
             .in('drop_id', dropIds).gte('created_at', since).neq('user_id', authUser.id),
           supabase.from('drop_likes').select('id', { count: 'exact', head: true })
             .in('drop_id', dropIds).gte('created_at', since).neq('user_id', authUser.id),
           supabase.from('drop_comments').select('drop_id')
             .in('drop_id', dropIds).neq('user_id', authUser.id)
-            .order('created_at', { ascending: false }).limit(1),
+            .order('created_at', { ascending: false }),
         ]);
         const c = commentsRes.count || 0;
         const l = likesRes.count || 0;
         if (c + l > 0) {
-          const dropId = recentCommentRes.data?.[0]?.drop_id || null;
+          // drop_id の重複を除去しつつ最新コメント順で並べる
+          const seen = new Set();
+          const uniqueDropIds = (allCommentsRes.data || [])
+            .map(r => r.drop_id)
+            .filter(id => { if (seen.has(id)) return false; seen.add(id); return true; });
+          setLoginToastIndex(0);
           setLoginToastFading(false);
-          setLoginToast({ comments: c, likes: l, dropId });
+          setLoginToast({ comments: c, likes: l, dropIds: uniqueDropIds });
           startToastTimer();
         }
       })
@@ -2990,20 +2996,27 @@ const App = () => {
           style={{ opacity: loginToastFading ? 0 : 1 }}
         >
           <div
-            className={`bg-white/95 backdrop-blur-md px-5 py-3 rounded-full shadow-xl border border-sky-100 flex items-center gap-2 text-sm font-bold text-slate-700 ${loginToast.dropId ? 'cursor-pointer active:scale-95 transition-transform' : ''}`}
+            className={`bg-white/95 backdrop-blur-md px-5 py-3 rounded-full shadow-xl border border-sky-100 flex items-center gap-2 text-sm font-bold text-slate-700 ${loginToast.dropIds?.length ? 'cursor-pointer active:scale-95 transition-transform' : ''}`}
             onClick={() => {
-              if (!loginToast.dropId) return;
-              const drop = drops.find(d => d.id === loginToast.dropId);
+              const ids = loginToast.dropIds;
+              if (!ids?.length) return;
+              const drop = drops.find(d => d.id === ids[loginToastIndex]);
               if (drop) {
                 autoExpandCommentsRef.current = true;
                 setSelectedDrop(drop);
               }
+              setLoginToastIndex((loginToastIndex + 1) % ids.length);
               startToastTimer();
             }}
           >
             {loginToast.likes > 0 && <span>❤️ {loginToast.likes}件</span>}
             {loginToast.comments > 0 && <span>💬 {loginToast.comments}件</span>}
             <span className="text-slate-500 font-normal">届いています</span>
+            {loginToast.dropIds?.length > 1 && (
+              <span className="text-sky-400 text-xs font-normal">
+                {loginToastIndex + 1}/{loginToast.dropIds.length}
+              </span>
+            )}
           </div>
         </div>
       )}
