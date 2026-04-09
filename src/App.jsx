@@ -313,6 +313,13 @@ const formatTime = (seconds) => {
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
+// last_seen が 90秒以内ならオンライン（ハートビート方式）
+const calcIsOnline = (drop, now) => {
+  if (drop.isBot) return true;
+  if (drop.lastSeen) return (now - drop.lastSeen) < 90000;
+  return drop.isOnline ?? true;
+};
+
 const toLocalDrop = (drop, myUserId) => ({
   id: drop.id,
   text: drop.text,
@@ -327,6 +334,7 @@ const toLocalDrop = (drop, myUserId) => ({
   animDelay: Math.random() * -5,
   isMine: drop.user_id === myUserId,
   isOnline: drop.users?.is_online ?? true,
+  lastSeen: drop.users?.last_seen ? new Date(drop.users.last_seen).getTime() : null,
   likes: 0,
   likedByMe: false,
   createdAt: new Date(drop.created_at).getTime(),
@@ -592,6 +600,8 @@ const SpaceScreen = ({
   handlePostComment, dropComments,
   autoExpandCommentsRef,
 }) => {
+  const isDropOnline = (drop) => calcIsOnline(drop, now);
+
   const [isWinding, setIsWinding] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingDropId, setDraggingDropId] = useState(null);
@@ -861,7 +871,7 @@ const SpaceScreen = ({
                       ? <div className="w-12 h-12 rounded-full border-2 border-white shadow-sm bg-pink-50 flex items-center justify-center text-2xl pointer-events-none">💬</div>
                       : <img src={drop.avatar} alt="avatar" className="w-12 h-12 rounded-full border-2 border-white object-cover shadow-sm pointer-events-none" draggable="false" />
                     }
-                    <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${drop.isOnline ? 'bg-green-500' : 'bg-slate-400'}`}></span>
+                    <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${isDropOnline(drop) ? 'bg-green-500' : 'bg-slate-400'}`}></span>
                   </div>
                   <span className="text-base font-bold whitespace-nowrap text-slate-700 drop-shadow-sm pointer-events-none flex items-center gap-1.5">
                     {drop.text.length > 12 ? drop.text.slice(0, 12) + '...' : drop.text}
@@ -962,8 +972,8 @@ const SpaceScreen = ({
           }
           <div className="flex flex-col items-center mb-4">
             <span className="text-sm font-bold text-slate-500">{selectedDrop.userName} ({selectedDrop.ageGroup})</span>
-            <span className={`text-xs font-bold px-2 py-0.5 mt-1 rounded-full ${selectedDrop.isOnline ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'}`}>
-              {selectedDrop.isOnline ? 'オンライン' : 'オフライン'}
+            <span className={`text-xs font-bold px-2 py-0.5 mt-1 rounded-full ${isDropOnline(selectedDrop) ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'}`}>
+              {isDropOnline(selectedDrop) ? 'オンライン' : 'オフライン'}
             </span>
           </div>
           <p className="text-xl font-bold mb-4 text-slate-800 text-center whitespace-pre-wrap">"{selectedDrop.text}"</p>
@@ -1106,8 +1116,8 @@ const SpaceScreen = ({
                   </button>
                   <button
                     onClick={handleSyncRequest}
-                    disabled={!selectedDrop.isOnline}
-                    className={`flex-1 py-3.5 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-md transition ${selectedDrop.isOnline ? 'bg-gradient-to-r from-sky-500 to-blue-500 text-white hover:opacity-90' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
+                    disabled={!isDropOnline(selectedDrop)}
+                    className={`flex-1 py-3.5 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-md transition ${isDropOnline(selectedDrop) ? 'bg-gradient-to-r from-sky-500 to-blue-500 text-white hover:opacity-90' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
                   >
                     <MessageCircle size={20} /> 会話する
                   </button>
@@ -1117,12 +1127,12 @@ const SpaceScreen = ({
                 {!isCommentMode && !commentSent && (
                   <button
                     onClick={() => setIsCommentMode(true)}
-                    className={`w-full py-3.5 rounded-2xl flex items-center justify-center gap-2 font-bold transition shadow-sm ${!selectedDrop.isOnline ? 'bg-sky-500 text-white hover:bg-sky-600' : 'bg-sky-50 text-sky-600 hover:bg-sky-100'}`}
+                    className={`w-full py-3.5 rounded-2xl flex items-center justify-center gap-2 font-bold transition shadow-sm ${!isDropOnline(selectedDrop) ? 'bg-sky-500 text-white hover:bg-sky-600' : 'bg-sky-50 text-sky-600 hover:bg-sky-100'}`}
                   >
                     ✉️ メッセージを残す
                   </button>
                 )}
-                {!selectedDrop.isOnline && !isCommentMode && !commentSent && (
+                {!isDropOnline(selectedDrop) && !isCommentMode && !commentSent && (
                   <p className="text-xs text-center text-slate-400 mt-1">オフラインでも気持ちを届けられます</p>
                 )}
 
@@ -2089,6 +2099,21 @@ const App = () => {
       .catch(() => {});
   }, [screen, authUser]);
 
+  // ハートビート：30秒ごとに last_seen を更新してオンライン維持
+  useEffect(() => {
+    if (!authUser) return;
+    const beat = () => {
+      if (document.visibilityState !== 'hidden') {
+        supabase.from('users')
+          .update({ last_seen: new Date().toISOString(), is_online: true })
+          .eq('id', authUser.id);
+      }
+    };
+    beat(); // 即時1回
+    const id = setInterval(beat, 30000);
+    return () => clearInterval(id);
+  }, [authUser]);
+
   const startToastTimer = () => {
     if (loginToastTimerRef.current) clearTimeout(loginToastTimerRef.current);
     setLoginToastFading(false);
@@ -2221,7 +2246,7 @@ const App = () => {
     const loadDrops = async () => {
       const { data } = await supabase
         .from('drops')
-        .select('*, users(name, avatar_url, is_online, birth_date)');
+        .select('*, users(name, avatar_url, is_online, last_seen, birth_date)');
       const realDrops = data ? data.map(d => toLocalDrop(d, authUser.id)) : [];
       const realUsers = countRealUsers(realDrops);
       const botSlots = Math.max(0, MAX_WAVE_DROPS - realUsers);
@@ -2234,14 +2259,18 @@ const App = () => {
 
     channel = supabase.channel('public:drops')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users' }, (payload) => {
-        // ユーザーのオンライン状態が変わったらDropに即反映
-        const { id, is_online } = payload.new;
-        setDrops(prev => prev.map(d => d.userId === id ? { ...d, isOnline: is_online } : d));
+        // ユーザーのオンライン状態・last_seenが変わったらDropに即反映
+        const { id, is_online, last_seen } = payload.new;
+        setDrops(prev => prev.map(d => d.userId === id ? {
+          ...d,
+          isOnline: is_online,
+          lastSeen: last_seen ? new Date(last_seen).getTime() : d.lastSeen,
+        } : d));
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'drops' }, async (payload) => {
         const { data } = await supabase
           .from('drops')
-          .select('*, users(name, avatar_url, is_online, birth_date)')
+          .select('*, users(name, avatar_url, is_online, last_seen, birth_date)')
           .eq('id', payload.new.id)
           .single();
         if (!data) return;
@@ -2670,7 +2699,7 @@ const App = () => {
         pos_x: pos.x, pos_y: pos.y, anim_type: Math.floor(Math.random() * 3) + 1,
         media_url: mediaUrl, media_type: mediaType,
         expires_at: new Date(Date.now() + DROP_LIFETIME).toISOString(),
-      }).select('*, users(name, avatar_url, is_online, birth_date)').single();
+      }).select('*, users(name, avatar_url, is_online, last_seen, birth_date)').single();
 
       if (!error && data) {
         const localDrop = toLocalDrop(data, authUser.id, userProfile);
@@ -2756,7 +2785,7 @@ const App = () => {
 
   const handleSyncRequest = async () => {
     if (!authUser || !selectedDrop) return;
-    if (!selectedDrop.isOnline && !selectedDrop.isBot) {
+    if (!calcIsOnline(selectedDrop, now) && !selectedDrop.isBot) {
       alert('相手がオフラインのため、今は会話を開始できません。');
       return;
     }
