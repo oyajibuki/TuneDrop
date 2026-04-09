@@ -914,7 +914,7 @@ const SpaceScreen = ({
             onPointerDown={stopPropagation} onPointerMove={stopPropagation} onPointerUp={stopPropagation}
             onClick={() => setSelectedDrop(null)}
           />
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white/95 backdrop-blur-md p-6 rounded-3xl shadow-2xl z-50 flex flex-col items-center min-w-[280px]"
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white/95 backdrop-blur-md p-6 rounded-3xl shadow-2xl z-50 flex flex-col items-center w-[90vw] max-w-sm max-h-[85vh] overflow-y-auto"
           onPointerDown={stopPropagation} onPointerMove={stopPropagation} onPointerUp={stopPropagation}>
           <button className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1" onClick={() => setSelectedDrop(null)}><X size={20} /></button>
           {!selectedDrop.isMine && (
@@ -1015,7 +1015,7 @@ const SpaceScreen = ({
           )}
           
           {selectedDrop.mediaUrl && (
-             <div className="w-full max-h-60 rounded-2xl overflow-hidden mb-6 bg-slate-100 flex items-center justify-center">
+             <div className="w-full rounded-2xl overflow-hidden mb-6 bg-slate-100 flex items-center justify-center" style={{ maxHeight: '40vh' }}>
                {selectedDrop.mediaType && selectedDrop.mediaType.startsWith('video') ? (
                  <video src={selectedDrop.mediaUrl} controls autoPlay muted loop playsInline className="w-full h-full object-contain" />
                ) : (
