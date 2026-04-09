@@ -1936,7 +1936,9 @@ const App = () => {
   const [blockedUsers, setBlockedUsers] = useState([]);
   const [dropComments, setDropComments] = useState([]);
   const [loginToast, setLoginToast] = useState(null); // { likes: N, comments: N, dropId: string|null }
+  const [loginToastFading, setLoginToastFading] = useState(false);
   const loginToastShownRef = useRef(false);
+  const loginToastTimerRef = useRef(null);
   const autoExpandCommentsRef = useRef(false);
   const [camera, setCamera] = useState({ x: CANVAS_SIZE / 2, y: CANVAS_SIZE / 2 });
   const [scale, setScale] = useState(1);
@@ -2073,12 +2075,22 @@ const App = () => {
         const l = likesRes.count || 0;
         if (c + l > 0) {
           const dropId = recentCommentRes.data?.[0]?.drop_id || null;
+          setLoginToastFading(false);
           setLoginToast({ comments: c, likes: l, dropId });
-          setTimeout(() => setLoginToast(null), 6000);
+          startToastTimer();
         }
       })
       .catch(() => {});
   }, [screen, authUser]);
+
+  const startToastTimer = () => {
+    if (loginToastTimerRef.current) clearTimeout(loginToastTimerRef.current);
+    setLoginToastFading(false);
+    loginToastTimerRef.current = setTimeout(() => {
+      setLoginToastFading(true);
+      setTimeout(() => { setLoginToast(null); setLoginToastFading(false); }, 500);
+    }, 5000);
+  };
 
   const handleLineAuthCallback = async (code) => {
     console.log('--- LINE Auth Callback Start ---');
@@ -2973,9 +2985,12 @@ const App = () => {
 
       {/* ログイントースト */}
       {screen === 'space' && loginToast && (
-        <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-[300] animate-bounce-in">
+        <div
+          className="fixed top-6 left-1/2 transform -translate-x-1/2 z-[300] transition-opacity duration-500"
+          style={{ opacity: loginToastFading ? 0 : 1 }}
+        >
           <div
-            className={`bg-white/95 backdrop-blur-md px-5 py-3 rounded-full shadow-xl border border-sky-100 flex items-center gap-3 text-sm font-bold text-slate-700 ${loginToast.dropId ? 'cursor-pointer active:scale-95 transition-transform' : ''}`}
+            className={`bg-white/95 backdrop-blur-md px-5 py-3 rounded-full shadow-xl border border-sky-100 flex items-center gap-2 text-sm font-bold text-slate-700 ${loginToast.dropId ? 'cursor-pointer active:scale-95 transition-transform' : ''}`}
             onClick={() => {
               if (!loginToast.dropId) return;
               const drop = drops.find(d => d.id === loginToast.dropId);
@@ -2983,13 +2998,12 @@ const App = () => {
                 autoExpandCommentsRef.current = true;
                 setSelectedDrop(drop);
               }
-              setLoginToast(null);
+              startToastTimer();
             }}
           >
             {loginToast.likes > 0 && <span>❤️ {loginToast.likes}件</span>}
             {loginToast.comments > 0 && <span>💬 {loginToast.comments}件</span>}
             <span className="text-slate-500 font-normal">届いています</span>
-            {loginToast.dropId && <span className="text-sky-400 text-xs font-normal">→ 見る</span>}
           </div>
         </div>
       )}
