@@ -2996,7 +2996,7 @@ const App = () => {
           style={{ opacity: loginToastFading ? 0 : 1 }}
         >
           <div
-            className={`bg-white/95 backdrop-blur-md px-5 py-3 rounded-full shadow-xl border border-sky-100 flex items-center gap-2 text-sm font-bold text-slate-700 ${loginToast.dropIds?.length ? 'cursor-pointer active:scale-95 transition-transform' : ''}`}
+            className={`bg-white/95 backdrop-blur-md px-7 py-3 rounded-full shadow-xl border border-sky-100 flex items-center gap-2 text-sm font-bold text-slate-700 whitespace-nowrap ${loginToast.dropIds?.length ? 'cursor-pointer active:scale-95 transition-transform' : ''}`}
             onClick={() => {
               const ids = loginToast.dropIds;
               if (!ids?.length) return;
