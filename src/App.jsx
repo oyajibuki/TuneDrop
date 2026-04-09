@@ -316,7 +316,7 @@ const formatTime = (seconds) => {
 // last_seen が 90秒以内ならオンライン（ハートビート方式）
 const calcIsOnline = (drop, now) => {
   if (drop.isBot) return true;
-  if (drop.lastSeen) return (now - drop.lastSeen) < 90000;
+  if (drop.lastSeen) return (now - drop.lastSeen) < 120000;
   return drop.isOnline ?? true;
 };
 
@@ -2035,7 +2035,7 @@ const App = () => {
       if (document.visibilityState === 'hidden') {
         supabase.from('users').update({ is_online: false }).eq('id', uid);
       } else {
-        supabase.from('users').update({ is_online: true }).eq('id', uid);
+        supabase.from('users').update({ is_online: true, last_seen: new Date().toISOString() }).eq('id', uid);
       }
     };
     window.addEventListener('beforeunload', setOffline);
@@ -2168,8 +2168,8 @@ const App = () => {
     const { data } = await supabase.from('users').select('*').eq('id', user.id).single();
     if (data) {
       setUserProfile({ name: data.name, ageGroup: calculateAgeGroup(data.birth_date), gender: data.gender, avatarUrl: data.avatar_url || '' });
-      // ログイン時にオンライン状態を更新
-      await supabase.from('users').update({ is_online: true }).eq('id', user.id);
+      // ログイン時にオンライン状態と last_seen を更新
+      await supabase.from('users').update({ is_online: true, last_seen: new Date().toISOString() }).eq('id', user.id);
       setScreen('space');
     } else {
       // Googleアカウントの名前を初期値に
@@ -2222,6 +2222,7 @@ const App = () => {
       gender: userProfile.gender,
       avatar_url: avatarUrl,
       is_online: true,
+      last_seen: new Date().toISOString(),
     });
     if (!error) setScreen('space');
     else alert('プロフィール保存に失敗しました: ' + error.message);
