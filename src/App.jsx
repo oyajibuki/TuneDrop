@@ -330,6 +330,7 @@ const toLocalDrop = (drop, myUserId) => ({
   likes: 0,
   likedByMe: false,
   createdAt: new Date(drop.created_at).getTime(),
+  expiresAt: drop.expires_at ? new Date(drop.expires_at).getTime() : new Date(drop.created_at).getTime() + DROP_LIFETIME,
   isBot: false,
   mediaUrl: drop.media_url || null,
   mediaType: drop.media_type || null,
@@ -588,6 +589,7 @@ const SpaceScreen = ({
   scale, setScale, isUploading,
   isCirculating, onToggleCirculate,
   activeTunes, botTunes,
+  handlePostComment, dropComments,
 }) => {
   const [isWinding, setIsWinding] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -626,6 +628,10 @@ const SpaceScreen = ({
   const initialDistRef = useRef(null);
   const clickStartRef = useRef({ x: 0, y: 0 });
   const [showMenu, setShowMenu] = useState(false);
+  const [commentInput, setCommentInput] = useState('');
+  const [isCommentMode, setIsCommentMode] = useState(false);
+  const [commentSent, setCommentSent] = useState(false);
+  const [isCommentsExpanded, setIsCommentsExpanded] = useState(false);
   const canvasContainerRef = useRef(null);
   const scaleRef = useRef(scale);
   const cameraRef = useRef(camera);
@@ -633,6 +639,12 @@ const SpaceScreen = ({
   scaleRef.current = scale;
   cameraRef.current = camera;
 
+  useEffect(() => {
+    setCommentInput('');
+    setIsCommentMode(false);
+    setCommentSent(false);
+    setIsCommentsExpanded(false);
+  }, [selectedDrop?.id]);
 
   useEffect(() => { setShowMenu(false); }, [selectedDrop]);
   // アンマウント時にカメラアニメをキャンセル
@@ -1030,21 +1042,94 @@ const SpaceScreen = ({
                 Dropを取り消す
               </button>
             ) : (
-              <div className="flex w-full gap-3">
-                <button
-                  onClick={() => handleLike(selectedDrop.id)}
-                  disabled={selectedDrop.likedByMe}
-                  className={`flex-1 py-3.5 rounded-2xl flex items-center justify-center gap-2 transition font-bold shadow-sm ${selectedDrop.likedByMe ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-pink-50 text-pink-500 hover:bg-pink-100'}`}
-                >
-                  <Heart size={20} fill={selectedDrop.likedByMe ? 'currentColor' : 'none'} />
-                  {selectedDrop.likedByMe ? 'いいね済み' : 'いいね'}
-                </button>
-                <button
-                  onClick={handleSyncRequest}
-                  className="flex-1 py-3.5 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-md transition bg-gradient-to-r from-sky-500 to-blue-500 text-white hover:opacity-90"
-                >
-                  <MessageCircle size={20} /> 会話する
-                </button>
+              <div className="w-full flex flex-col items-center">
+                {/* コメント一覧（折り畳み） */}
+                {dropComments.length > 0 && (
+                  <div className="w-full mb-3">
+                    <button
+                      onClick={() => setIsCommentsExpanded(v => !v)}
+                      className="w-full flex items-center justify-between text-xs text-slate-500 px-1 py-1"
+                    >
+                      <span>💬 コメント ({dropComments.length}件)</span>
+                      <span>{isCommentsExpanded ? '▲' : '▼'}</span>
+                    </button>
+                    {isCommentsExpanded && (
+                      <div className="mt-1 space-y-1 max-h-28 overflow-y-auto">
+                        {dropComments.map((c, i) => (
+                          <div key={i} className="text-xs text-slate-600 bg-slate-50 rounded-xl px-3 py-2">
+                            {c.text}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* いいね + 会話するボタン */}
+                <div className="flex w-full gap-3 mb-3">
+                  <button
+                    onClick={() => handleLike(selectedDrop.id)}
+                    disabled={selectedDrop.likedByMe}
+                    className={`flex-1 py-3.5 rounded-2xl flex items-center justify-center gap-2 transition font-bold shadow-sm ${selectedDrop.likedByMe ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-pink-50 text-pink-500 hover:bg-pink-100'}`}
+                  >
+                    <Heart size={20} fill={selectedDrop.likedByMe ? 'currentColor' : 'none'} />
+                    {selectedDrop.likedByMe ? 'いいね済み' : 'いいね'}
+                  </button>
+                  <button
+                    onClick={handleSyncRequest}
+                    disabled={!selectedDrop.isOnline}
+                    className={`flex-1 py-3.5 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-md transition ${selectedDrop.isOnline ? 'bg-gradient-to-r from-sky-500 to-blue-500 text-white hover:opacity-90' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
+                  >
+                    <MessageCircle size={20} /> 会話する
+                  </button>
+                </div>
+
+                {/* メッセージを残すボタン */}
+                {!isCommentMode && !commentSent && (
+                  <button
+                    onClick={() => setIsCommentMode(true)}
+                    className={`w-full py-3.5 rounded-2xl flex items-center justify-center gap-2 font-bold transition shadow-sm ${!selectedDrop.isOnline ? 'bg-sky-500 text-white hover:bg-sky-600' : 'bg-sky-50 text-sky-600 hover:bg-sky-100'}`}
+                  >
+                    ✉️ メッセージを残す
+                  </button>
+                )}
+                {!selectedDrop.isOnline && !isCommentMode && !commentSent && (
+                  <p className="text-xs text-center text-slate-400 mt-1">オフラインでも気持ちを届けられます</p>
+                )}
+
+                {/* コメント入力欄 */}
+                {isCommentMode && !commentSent && (
+                  <div className="w-full flex flex-col gap-2 mt-1">
+                    <textarea
+                      value={commentInput}
+                      onChange={e => setCommentInput(e.target.value)}
+                      placeholder="気持ちを残していく..."
+                      maxLength={100}
+                      rows={3}
+                      className="w-full bg-sky-50 border border-sky-200 rounded-2xl p-3 text-sm text-slate-800 resize-none focus:outline-none focus:ring-2 focus:ring-sky-400"
+                    />
+                    <div className="flex gap-2">
+                      <button onClick={() => { setIsCommentMode(false); setCommentInput(''); }} className="flex-1 py-2.5 rounded-2xl text-sm text-slate-500 bg-slate-100 hover:bg-slate-200 transition">キャンセル</button>
+                      <button
+                        onClick={async () => {
+                          if (!commentInput.trim()) return;
+                          await handlePostComment(selectedDrop.id, commentInput);
+                          setCommentSent(true);
+                          setIsCommentMode(false);
+                          setCommentInput('');
+                        }}
+                        className="flex-1 py-2.5 rounded-2xl text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 transition shadow-sm"
+                      >送信</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 送信完了 */}
+                {commentSent && (
+                  <div className="w-full py-3 rounded-2xl bg-sky-50 text-sky-600 text-center text-sm font-bold">
+                    ☁️ 届けました
+                  </div>
+                )}
               </div>
             )
           )}
@@ -1080,9 +1165,9 @@ const SpaceScreen = ({
               <textarea
                 value={myDropText}
                 onChange={(e) => setMyDropText(e.target.value)}
-                placeholder="メッセージを入力 (最大30文字)"
+                placeholder="メッセージを入力 (最大100文字)"
                 className="w-full bg-slate-50 border-none rounded-xl p-3 text-slate-800 resize-none focus:outline-none focus:ring-2 focus:ring-sky-400"
-                maxLength={30}
+                maxLength={100}
                 rows={2}
               />
               <button 
@@ -1163,7 +1248,7 @@ const SpaceScreen = ({
               placeholder={myDropCooldown > 0 ? `次のDropまで ${myDropCooldown}秒...` : "今の気持ちをDropする..."}
               disabled={myDropCooldown > 0}
               className="w-full bg-white/80 border-2 border-white backdrop-blur-md rounded-full py-4 pl-12 pr-14 text-slate-800 placeholder-slate-500 focus:outline-none focus:bg-white shadow-lg disabled:opacity-70 font-medium"
-              maxLength={30}
+              maxLength={100}
             />
             <input
               ref={dropMediaInputRef} type="file" accept="image/*,video/*"
@@ -1817,6 +1902,9 @@ const App = () => {
 
   const [drops, setDrops] = useState([]);
   const [blockedUsers, setBlockedUsers] = useState([]);
+  const [dropComments, setDropComments] = useState([]);
+  const [loginToast, setLoginToast] = useState(null); // { likes: N, comments: N }
+  const loginToastShownRef = useRef(false);
   const [camera, setCamera] = useState({ x: CANVAS_SIZE / 2, y: CANVAS_SIZE / 2 });
   const [scale, setScale] = useState(1);
   const [now, setNow] = useState(Date.now());
@@ -1889,6 +1977,47 @@ const App = () => {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // selectedDropが変わったときコメントを取得
+  useEffect(() => {
+    if (!selectedDrop || selectedDrop.isMine || selectedDrop.isBot || selectedDrop.isAd) {
+      setDropComments([]);
+      return;
+    }
+    let cancelled = false;
+    supabase.from('drop_comments')
+      .select('text, created_at')
+      .eq('drop_id', selectedDrop.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => { if (!cancelled && data) setDropComments(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [selectedDrop?.id]);
+
+  // ログイントースト - spaceに初回入ったとき
+  useEffect(() => {
+    if (screen !== 'space' || !authUser || loginToastShownRef.current) return;
+    loginToastShownRef.current = true;
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    supabase.from('drops').select('id').eq('user_id', authUser.id)
+      .then(async ({ data: myDrops }) => {
+        if (!myDrops?.length) return;
+        const dropIds = myDrops.map(d => d.id);
+        const [commentsRes, likesRes] = await Promise.all([
+          supabase.from('drop_comments').select('id', { count: 'exact', head: true })
+            .in('drop_id', dropIds).gte('created_at', since).neq('user_id', authUser.id),
+          supabase.from('drop_likes').select('id', { count: 'exact', head: true })
+            .in('drop_id', dropIds).gte('created_at', since).neq('user_id', authUser.id),
+        ]);
+        const c = commentsRes.count || 0;
+        const l = likesRes.count || 0;
+        if (c + l > 0) {
+          setLoginToast({ comments: c, likes: l });
+          setTimeout(() => setLoginToast(null), 4000);
+        }
+      })
+      .catch(() => {});
+  }, [screen, authUser]);
 
   const handleLineAuthCallback = async (code) => {
     console.log('--- LINE Auth Callback Start ---');
@@ -2454,6 +2583,7 @@ const App = () => {
         user_id: authUser.id, text: myDropText, color,
         pos_x: pos.x, pos_y: pos.y, anim_type: Math.floor(Math.random() * 3) + 1,
         media_url: mediaUrl, media_type: mediaType,
+        expires_at: new Date(Date.now() + DROP_LIFETIME).toISOString(),
       }).select('*, users(name, avatar_url, is_online, birth_date)').single();
 
       if (!error && data) {
@@ -2497,11 +2627,28 @@ const App = () => {
     setSelectedDrop(null);
   };
 
-  const handleLike = (id) => {
+  const handleLike = async (id) => {
     setDrops(prev => prev.map(d => d.id === id && !d.likedByMe ? { ...d, likes: (d.likes || 0) + 1, likedByMe: true, isPopping: true } : d));
     setSelectedDrop(prev => prev && prev.id === id && !prev.likedByMe ? { ...prev, likes: (prev.likes || 0) + 1, likedByMe: true } : prev);
     setTimeout(() => setDrops(prev => prev.map(d => d.id === id ? { ...d, isPopping: false } : d)), 300);
     playSound('like');
+    if (!authUser) return;
+    await supabase.from('drop_likes').upsert({ drop_id: id, user_id: authUser.id }, { onConflict: 'drop_id,user_id' }).catch(() => {});
+    const newExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    await supabase.from('drops').update({ expires_at: newExpiry }).eq('id', id).lt('expires_at', newExpiry).catch(() => {});
+  };
+
+  const handlePostComment = async (dropId, text) => {
+    if (!authUser || !text.trim()) return;
+    await supabase.from('drop_comments').insert({ drop_id: dropId, user_id: authUser.id, text: text.trim() }).catch(() => {});
+    // Drop寿命を最大24時間にリセット
+    const newExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    await supabase.from('drops').update({ expires_at: newExpiry }).eq('id', dropId).lt('expires_at', newExpiry).catch(() => {});
+    // コメント一覧を更新
+    try {
+      const { data } = await supabase.from('drop_comments').select('text, created_at').eq('drop_id', dropId).order('created_at', { ascending: false });
+      if (data) setDropComments(data);
+    } catch (_) {}
   };
 
   const handleBlock = (userName) => {
@@ -2727,6 +2874,7 @@ const App = () => {
           selectedDrop={selectedDrop} setSelectedDrop={setSelectedDrop} handleCatch={handleCatch}
           handleSyncRequest={handleSyncRequest} handleDeleteDrop={handleDeleteDrop} handleLike={handleLike}
           handleBlock={handleBlock} handleReport={handleReport} setIsSettingsOpen={setIsSettingsOpen}
+          handlePostComment={handlePostComment} dropComments={dropComments}
           scale={scale} setScale={setScale}
           dropMedia={dropMedia} setDropMedia={setDropMedia} dropMediaInputRef={dropMediaInputRef}
           isUploading={isUploading}
@@ -2746,6 +2894,17 @@ const App = () => {
       )}
       {screen === 'fade'    && <FadeScreen />}
       {screen === 'waiting' && <WaitingScreen chatPartner={chatPartner} onCancel={() => { setScreen('space'); setChatPartner(null); setCurrentRoomId(null); }} />}
+
+      {/* ログイントースト */}
+      {screen === 'space' && loginToast && (
+        <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-[300] animate-bounce-in">
+          <div className="bg-white/95 backdrop-blur-md px-5 py-3 rounded-full shadow-xl border border-sky-100 flex items-center gap-3 text-sm font-bold text-slate-700">
+            {loginToast.likes > 0 && <span>❤️ {loginToast.likes}件</span>}
+            {loginToast.comments > 0 && <span>💬 {loginToast.comments}件</span>}
+            <span className="text-slate-500 font-normal">届いています</span>
+          </div>
+        </div>
+      )}
 
       {/* 設定モーダル */}
       {isSettingsOpen && (
