@@ -590,6 +590,7 @@ const SpaceScreen = ({
   isCirculating, onToggleCirculate,
   activeTunes, botTunes,
   handlePostComment, dropComments,
+  autoExpandCommentsRef,
 }) => {
   const [isWinding, setIsWinding] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -643,7 +644,12 @@ const SpaceScreen = ({
     setCommentInput('');
     setIsCommentMode(false);
     setCommentSent(false);
-    setIsCommentsExpanded(false);
+    if (autoExpandCommentsRef?.current) {
+      setIsCommentsExpanded(true);
+      autoExpandCommentsRef.current = false;
+    } else {
+      setIsCommentsExpanded(false);
+    }
   }, [selectedDrop?.id]);
 
   useEffect(() => { setShowMenu(false); }, [selectedDrop]);
@@ -1929,8 +1935,9 @@ const App = () => {
   const [drops, setDrops] = useState([]);
   const [blockedUsers, setBlockedUsers] = useState([]);
   const [dropComments, setDropComments] = useState([]);
-  const [loginToast, setLoginToast] = useState(null); // { likes: N, comments: N }
+  const [loginToast, setLoginToast] = useState(null); // { likes: N, comments: N, dropId: string|null }
   const loginToastShownRef = useRef(false);
+  const autoExpandCommentsRef = useRef(false);
   const [camera, setCamera] = useState({ x: CANVAS_SIZE / 2, y: CANVAS_SIZE / 2 });
   const [scale, setScale] = useState(1);
   const [now, setNow] = useState(Date.now());
@@ -2053,17 +2060,21 @@ const App = () => {
       .then(async ({ data: myDrops }) => {
         if (!myDrops?.length) return;
         const dropIds = myDrops.map(d => d.id);
-        const [commentsRes, likesRes] = await Promise.all([
+        const [commentsRes, likesRes, recentCommentRes] = await Promise.all([
           supabase.from('drop_comments').select('id', { count: 'exact', head: true })
             .in('drop_id', dropIds).gte('created_at', since).neq('user_id', authUser.id),
           supabase.from('drop_likes').select('id', { count: 'exact', head: true })
             .in('drop_id', dropIds).gte('created_at', since).neq('user_id', authUser.id),
+          supabase.from('drop_comments').select('drop_id')
+            .in('drop_id', dropIds).neq('user_id', authUser.id)
+            .order('created_at', { ascending: false }).limit(1),
         ]);
         const c = commentsRes.count || 0;
         const l = likesRes.count || 0;
         if (c + l > 0) {
-          setLoginToast({ comments: c, likes: l });
-          setTimeout(() => setLoginToast(null), 4000);
+          const dropId = recentCommentRes.data?.[0]?.drop_id || null;
+          setLoginToast({ comments: c, likes: l, dropId });
+          setTimeout(() => setLoginToast(null), 6000);
         }
       })
       .catch(() => {});
@@ -2939,6 +2950,7 @@ const App = () => {
           handleSyncRequest={handleSyncRequest} handleDeleteDrop={handleDeleteDrop} handleLike={handleLike}
           handleBlock={handleBlock} handleReport={handleReport} setIsSettingsOpen={setIsSettingsOpen}
           handlePostComment={handlePostComment} dropComments={dropComments}
+          autoExpandCommentsRef={autoExpandCommentsRef}
           scale={scale} setScale={setScale}
           dropMedia={dropMedia} setDropMedia={setDropMedia} dropMediaInputRef={dropMediaInputRef}
           isUploading={isUploading}
@@ -2962,10 +2974,22 @@ const App = () => {
       {/* ログイントースト */}
       {screen === 'space' && loginToast && (
         <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-[300] animate-bounce-in">
-          <div className="bg-white/95 backdrop-blur-md px-5 py-3 rounded-full shadow-xl border border-sky-100 flex items-center gap-3 text-sm font-bold text-slate-700">
+          <div
+            className={`bg-white/95 backdrop-blur-md px-5 py-3 rounded-full shadow-xl border border-sky-100 flex items-center gap-3 text-sm font-bold text-slate-700 ${loginToast.dropId ? 'cursor-pointer active:scale-95 transition-transform' : ''}`}
+            onClick={() => {
+              if (!loginToast.dropId) return;
+              const drop = drops.find(d => d.id === loginToast.dropId);
+              if (drop) {
+                autoExpandCommentsRef.current = true;
+                setSelectedDrop(drop);
+              }
+              setLoginToast(null);
+            }}
+          >
             {loginToast.likes > 0 && <span>❤️ {loginToast.likes}件</span>}
             {loginToast.comments > 0 && <span>💬 {loginToast.comments}件</span>}
             <span className="text-slate-500 font-normal">届いています</span>
+            {loginToast.dropId && <span className="text-sky-400 text-xs font-normal">→ 見る</span>}
           </div>
         </div>
       )}
