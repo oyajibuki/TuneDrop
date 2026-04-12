@@ -377,7 +377,7 @@ const TermsModal = ({ type, onClose }) => {
               </section>
               <section>
                 <h3 className="font-bold text-slate-800 mb-1">第3条（コンテンツ）</h3>
-                <p>ユーザーが投稿したDropは30分で自動削除されます。チャットメッセージは会話終了後に削除されます。運営は不適切なコンテンツを予告なく削除できます。</p>
+                <p>ユーザーが投稿したDropは24時間で自動削除されます。チャットメッセージは会話終了後に削除されます。運営は不適切なコンテンツを予告なく削除できます。</p>
               </section>
               <section>
                 <h3 className="font-bold text-slate-800 mb-1">第4条（アカウント停止）</h3>
@@ -460,7 +460,7 @@ const LoginScreen = ({ onGoogleLogin, onLineLogin }) => {
     <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-b from-sky-400 to-sky-200 text-white p-6 relative">
       <h1 className="text-5xl font-bold mb-4 tracking-wider text-white drop-shadow-md">TuneDrop</h1>
       <p className="text-sky-50 mb-8 text-center drop-shadow-sm font-medium">
-        必要最低限で繋がる。<br />5分で消える、今の思い。
+        必要最低限で繋がる。<br />24時間で消える、今の思い。
       </p>
 
       <div className="flex items-start gap-3 mb-8 w-full max-w-sm bg-black/10 px-5 py-3 rounded-2xl backdrop-blur-sm border border-white/20">
@@ -825,8 +825,8 @@ const SpaceScreen = ({
       >
         <div className="absolute inset-0 origin-center" style={{ transform: `scale(${scale})`, transition: isDragging || draggingDropId ? 'none' : 'transform 0.15s ease-out' }}>
           {drops.map(drop => {
-            const age = now - drop.createdAt;
-            const lifeRatio = Math.max(0, 1 - age / DROP_LIFETIME);
+            const remaining = drop.expiresAt - now;
+            const lifeRatio = Math.max(0, Math.min(1, remaining / DROP_LIFETIME));
             const opacity = lifeRatio > 0.05 ? 1 : lifeRatio * 20;
             const isBeingDragged = draggingDropId === drop.id;
             const glowShadow = drop.isAd 
@@ -1250,7 +1250,7 @@ const SpaceScreen = ({
               // 24時間以内の表示中リアルDropのみを巡回（期限切れ透明Dropを除外）
               const nowMs = Date.now();
               const targets = drops.filter(d =>
-                isRealDrop(d) && (nowMs - d.createdAt) < DROP_LIFETIME
+                isRealDrop(d) && d.expiresAt > nowMs
               );
               if (targets.length === 0) return;
               tuneIdxRef.current = (tuneIdxRef.current + 1) % targets.length;
@@ -1981,8 +1981,8 @@ const App = () => {
 
   // ライブデータ（ニュース4種・為替・天気・BTC・名言）
   const [liveData, setLiveData] = useState({ feeds: { nhk: [], yahoo: [], hatena: [], tech: [] }, usdJpy: null, weather: null, btc: null, quote: null });
-  // アクティブTune数（30分以内のリアルDrop / dropsステートから直接計算）
-  const activeTunes = drops.filter(d => isRealDrop(d) && (Date.now() - d.createdAt) < DROP_LIFETIME).length;
+  // アクティブTune数（24時間以内のリアルDrop / dropsステートから直接計算）
+  const activeTunes = drops.filter(d => isRealDrop(d) && d.expiresAt > Date.now()).length;
   const botTuneCount = drops.filter(isBotDrop).length;
 
   // 巡回・サウンド設定

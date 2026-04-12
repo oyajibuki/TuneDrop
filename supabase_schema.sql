@@ -24,6 +24,7 @@ create table public.drops (
   pos_x       float        not null,
   pos_y       float        not null,
   anim_type   integer      not null,
+  expires_at  timestamptz  not null,
   created_at  timestamptz  default now()
 );
 
