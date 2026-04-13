@@ -241,6 +241,12 @@ const generateBotDrops = (totalBotDrops = MAX_WAVE_DROPS) => {
       link: 'https://oyajibuki.github.io/katana/',
       color: 'hsla(0, 60%, 88%, 0.95)',
     },
+    {
+      id: 'ad-walkcraft',
+      text: '🚶 Walk & Craft\n歩いて素材を集めてクラフト！',
+      link: 'https://oyajibuki.github.io/WalkCraft/',
+      color: 'hsla(90, 55%, 85%, 0.95)',
+    },
   ];
   gameAds.forEach(ad => {
     botDrops.push({
